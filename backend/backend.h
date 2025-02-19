@@ -1,4 +1,4 @@
-﻿// IoR_backend.h : Include file for standard system include files,
+﻿// backend.h : Include file for standard system include files,
 // or project specific include files.
 
 #pragma once

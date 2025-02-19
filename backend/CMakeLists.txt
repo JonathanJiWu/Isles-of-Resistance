@@ -1,4 +1,4 @@
-﻿# CMakeList.txt : CMake project for IoR_backend, include source and define
+﻿# CMakeList.txt : CMake project for backend, include source and define
 # project specific logic here.
 #
 cmake_minimum_required (VERSION 3.8)
@@ -9,13 +9,13 @@ if (POLICY CMP0141)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
-project ("IoR_backend")
+project ("backend")
 
 # Add source to this project's executable.
-add_executable (IoR_backend "IoR_backend.cpp" "IoR_backend.h")
+add_executable (backend "backend.cpp" "backend.h")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET IoR_backend PROPERTY CXX_STANDARD 20)
+  set_property(TARGET backend PROPERTY CXX_STANDARD 20)
 endif()
 
 # TODO: Add tests and install targets if needed.
