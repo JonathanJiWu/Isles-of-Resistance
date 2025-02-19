@@ -3,3 +3,5 @@
 ################################################################################
 
 /.vs
+/backend/IoR_backend/.vs
+/backend/IoR_backend/out/build/x64-debug
