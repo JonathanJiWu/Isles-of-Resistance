@@ -18,4 +18,20 @@ if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET backend PROPERTY CXX_STANDARD 20)
 endif()
 
-# TODO: Add tests and install targets if needed.
+find_package(Boost REQUIRED COMPONENTS system thread)
+find_package(SQLite3 REQUIRED)
+
+add_executable(backend 
+    src/main.cpp 
+    src/GameState.cpp 
+    src/Grid.cpp 
+    src/Entities.cpp 
+    src/AI.cpp 
+    src/WebSocketServer.cpp
+    src/RestApi.cpp
+    src/Database.cpp
+)
+
+target_include_directories(backend PRIVATE include)
+target_link_libraries(backend Boost::system Boost::thread sqlite3)
+

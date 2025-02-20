@@ -4,5 +4,9 @@
 #pragma once
 
 #include <iostream>
+#include "GameState.h"
+#include "WebSocketServer.h"
+#include "RestApi.h"
+
 
 // TODO: Reference additional headers your program requires here.
