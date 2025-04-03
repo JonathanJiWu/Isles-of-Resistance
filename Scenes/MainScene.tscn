@@ -1,0 +1,68 @@
+[gd_scene load_steps=3 format=3 uid="uid://cg70kfcch8ktt"]
+
+[ext_resource type="Script" uid="uid://bf5t3yp74qbfd" path="res://Scripts/MainMenu.gd" id="1_tr2i4"]
+[ext_resource type="Script" uid="uid://e42i6u86h5io" path="res://Scripts/game_hud.gd" id="2_nhkr4"]
+
+[node name="MainScene" type="Node2D"]
+
+[node name="Node2D" type="Node2D" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="Node2D"]
+
+[node name="MainMenu" type="Control" parent="Node2D/UI"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 358.0
+offset_top = 121.0
+offset_right = 358.0
+offset_bottom = 121.0
+scale = Vector2(4.78549, 4.01011)
+script = ExtResource("1_tr2i4")
+
+[node name="StartButton" type="Button" parent="Node2D/UI/MainMenu"]
+layout_mode = 0
+offset_left = 28.2103
+offset_top = 50.1233
+offset_right = 74.2103
+offset_bottom = 81.1233
+text = "Start"
+
+[node name="ExitButton" type="Button" parent="Node2D/UI/MainMenu"]
+layout_mode = 0
+offset_left = 33.0
+offset_top = 89.0
+offset_right = 70.0
+offset_bottom = 120.0
+text = "Exit"
+
+[node name="GameHUD" type="Control" parent="Node2D"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 174.0
+offset_top = 358.0
+offset_right = 214.0
+offset_bottom = 398.0
+scale = Vector2(4.34829, 4.00371)
+script = ExtResource("2_nhkr4")
+
+[node name="ScoreLabel" type="Label" parent="Node2D/GameHUD"]
+layout_mode = 0
+offset_left = 65.3131
+offset_top = -71.4338
+offset_right = 126.313
+offset_bottom = -48.4338
+text = "Score: 0"
+
+[node name="WaveLabel" type="Label" parent="Node2D/GameHUD"]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = -1.074
+anchor_bottom = -1.074
+offset_left = 67.1529
+offset_top = -0.000164032
+offset_right = 127.153
+offset_bottom = 22.9998
+text = "Wave: 0"
+
+[connection signal="pressed" from="Node2D/UI/MainMenu/StartButton" to="Node2D/UI/MainMenu" method="_on_StartButton_pressed"]
+[connection signal="pressed" from="Node2D/UI/MainMenu/ExitButton" to="Node2D/UI/MainMenu" method="_on_exit_button_pressed"]

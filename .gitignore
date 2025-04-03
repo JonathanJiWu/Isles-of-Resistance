@@ -1,9 +1,3 @@
-﻿################################################################################
-# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
-################################################################################
-
-/.vs
-/backend/IoR_backend/.vs
-/backend/IoR_backend/out/build/x64-debug
-/backend/.vs
-/backend/out/build/x64-debug
+# Godot 4+ specific ignores
+.godot/
+/android/
