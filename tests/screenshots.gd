@@ -1,14 +1,14 @@
 extends SceneTree
 ## Drives the real game (rendered, e.g. under Xvfb) and captures screenshots of key screens.
-##   godot --path . --resolution 1600x900 -s tests/screenshots.gd -- <out_dir>
+##   godot --path . --resolution 1600x900 -s tests/screenshots.gd -- --sandbox <out_dir>
 
 var out_dir := "user://shots"
 
 
 func _init() -> void:
-	var args := OS.get_cmdline_user_args()
-	if not args.is_empty():
-		out_dir = args[0]
+	for a in OS.get_cmdline_user_args():
+		if not a.begins_with("--"):
+			out_dir = a
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	await process_frame
 	var Settings = root.get_node("/root/Settings")

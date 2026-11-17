@@ -44,6 +44,7 @@ var capital_id := -1
 var _sink = null                # event array receiving log events while resolving
 var _phase_kills := 0
 var _phase_hits := 0
+var _attacker_wave := 0
 
 
 # --------------------------------------------------------------------------------------------
@@ -83,7 +84,7 @@ func _setup(p_seed: int, p_difficulty: String) -> void:
 	waves_total = d["waves"]
 	stats = {"kills": {}, "kills_total": 0, "structures_lost": 0, "cities_lost": 0, "units_lost": 0,
 		"built": 0, "shots": 0, "hits": 0, "damage_taken": 0, "carriers_sunk": 0, "techs": 0,
-		"strikes": 0, "final_bonus": 0}
+		"strikes": 0, "final_bonus": 0, "wave_damage": {}}
 	for h in Hex.in_range(gen["capital"], 4):
 		if tiles.has(h):
 			explored[h] = true
@@ -1200,6 +1201,7 @@ func _enemy_weapon(kind: String) -> String:
 
 func _enemy_strike_structure(e: Dictionary, s: Dictionary, events: Array) -> void:
 	e["attacked"] = true
+	_attacker_wave = e["wave"]
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
 	var hit := _roll(edef["acc"])
 	events.append({"type": "attack", "id": e["id"], "kind": e["kind"], "weapon": _enemy_weapon(e["kind"]),
@@ -1217,6 +1219,7 @@ func _enemy_strike_structure(e: Dictionary, s: Dictionary, events: Array) -> voi
 
 func _enemy_strike_unit(e: Dictionary, u: Dictionary, events: Array) -> void:
 	e["attacked"] = true
+	_attacker_wave = e["wave"]
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
 	var dmg: int = edef.get("air_dmg", edef["dmg"]) if u["kind"] == "interceptor" else edef["dmg"]
 	var hit := _roll(edef["acc"])
@@ -1264,9 +1267,17 @@ func _damage_structure(s: Dictionary, dmg: int, events: Array) -> void:
 	dmg = maxi(dmg, 1)
 	s["hp"] -= dmg
 	stats["damage_taken"] += dmg
+	_track_wave_damage(dmg)
 	events.append({"type": "damage", "tgt": "structure", "id": s["id"], "dmg": dmg, "hp": maxi(s["hp"], 0), "pos": s["pos"], "shielded": shielded})
 	if s["hp"] <= 0:
 		_destroy_structure(s, events)
+
+
+func _track_wave_damage(dmg: int) -> void:
+	if not stats.has("wave_damage"):
+		stats["wave_damage"] = {}
+	var wd: Dictionary = stats["wave_damage"]
+	wd[_attacker_wave] = wd.get(_attacker_wave, 0) + dmg
 
 
 func _destroy_structure(s: Dictionary, events: Array) -> void:
@@ -1292,6 +1303,7 @@ func _damage_unit(u: Dictionary, dmg: int, events: Array) -> void:
 	if not units.has(u["id"]):
 		return
 	u["hp"] -= dmg
+	_track_wave_damage(dmg)
 	events.append({"type": "damage", "tgt": "unit", "id": u["id"], "dmg": dmg, "hp": maxi(u["hp"], 0), "pos": u["pos"]})
 	if u["hp"] <= 0:
 		units.erase(u["id"])

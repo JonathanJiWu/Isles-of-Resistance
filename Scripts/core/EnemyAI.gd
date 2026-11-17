@@ -496,7 +496,7 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 	compute_threat(st)
 	var d: Dictionary = st.diff()
 	var alive := float(st.carriers.size())
-	var budget: float = (10.0 + w * 7.0) * d["budget"] * (0.45 + 0.55 * alive / float(d["carriers"]))
+	var budget: float = (d["base"] + d["growth"] * (w - 1)) * (0.45 + 0.55 * alive / float(d["carriers"]))
 	var flak := 0.0
 	var sam := 0.0
 	var laser := 0.0
@@ -528,10 +528,13 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 	var air_t: float = air + kills_by.get("interceptor", 0) * 0.4
 
 	var weights := {"drone": 1.2, "fighter": 1.4, "gunship": 2.0, "bomber": 3.0}
-	if w >= Defs.ENEMIES["missile"]["min_wave"]:
-		weights["missile"] = 1.4
-	if w >= Defs.ENEMIES["stealth"]["min_wave"]:
-		weights["stealth"] = 1.6
+	# New aircraft types are phased in over three waves instead of appearing all at once.
+	var missile_wave: int = Defs.ENEMIES["missile"]["min_wave"]
+	var stealth_wave: int = Defs.ENEMIES["stealth"]["min_wave"]
+	if w >= missile_wave:
+		weights["missile"] = 1.4 * minf(1.0, (w - missile_wave + 1) / 3.0)
+	if w >= stealth_wave:
+		weights["stealth"] = 1.6 * minf(1.0, (w - stealth_wave + 1) / 3.0)
 	var notes: Array = []
 	if high_t > low_t * 1.3 and high_t >= 2.0:
 		weights["gunship"] *= 2.2
@@ -566,16 +569,13 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 		notes.append("Enemy planners know little of your defenses: reconnaissance drones will probe the islands.")
 
 	var units: Array = []
-	if w == 1:
-		units = ["drone", "fighter", "bomber"]
-		budget -= 12.0
 	while budget >= 2.0 and units.size() < 26:
 		var pick := _weighted_pick(weights, budget, st.rng)
 		if pick == "":
 			break
 		units.append(pick)
 		budget -= Defs.ENEMIES[pick]["cost"]
-	if w >= 2 and not units.has("bomber") and not units.has("stealth") and units.size() >= 2:
+	if not units.has("bomber") and not units.has("stealth") and units.size() >= 2:
 		units[0] = "bomber"
 
 	var sector := _choose_sector(st)

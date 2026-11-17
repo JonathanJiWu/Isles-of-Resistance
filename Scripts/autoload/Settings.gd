@@ -3,12 +3,12 @@ extends Node
 
 signal changed
 
-const PATH := "user://settings.cfg"
+var PATH := "user://sandbox_settings.cfg" if OS.get_cmdline_user_args().has("--sandbox") else "user://settings.cfg"
 const SPEEDS := [1.0, 1.5, 2.5, 4.0]
 
-var master_volume := 0.8
-var music_volume := 0.5
-var sfx_volume := 0.8
+var master_volume := 0.85
+var music_volume := 0.65
+var sfx_volume := 0.85
 var anim_speed := 1.5
 var skip_animations := false
 var fullscreen := false
@@ -33,6 +33,12 @@ func _ensure_buses() -> void:
 			var idx := AudioServer.bus_count - 1
 			AudioServer.set_bus_name(idx, bus_name)
 			AudioServer.set_bus_send(idx, "Master")
+	# A limiter on the master bus keeps stacked explosions and music from clipping.
+	if AudioServer.get_bus_effect_count(0) == 0:
+		var limiter := AudioEffectHardLimiter.new()
+		limiter.ceiling_db = -0.8
+		limiter.pre_gain_db = 0.0
+		AudioServer.add_bus_effect(0, limiter)
 
 
 func apply() -> void:

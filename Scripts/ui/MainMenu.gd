@@ -9,7 +9,7 @@ var _flyers: Array = []
 var _cam_t := 0.0
 var _modal: Modal
 var _seed_edit: LineEdit
-var _diff := "veteran"
+var _diff := "recruit"
 var _diff_buttons := {}
 var _diff_desc: Label
 var _new_panel: PanelContainer
@@ -20,6 +20,7 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_build_background()
 	_build_ui()
+	Audio.music("theme")
 
 
 func _build_background() -> void:
@@ -204,7 +205,7 @@ func _build_new_panel(row: HBoxContainer) -> void:
 	dr.add_theme_constant_override("separation", 8)
 	vb.add_child(dr)
 	for d in Defs.DIFFICULTY_ORDER:
-		var b := UITheme.button(Defs.DIFFICULTY[d]["name"], 140, 42)
+		var b := UITheme.button(Defs.DIFFICULTY[d]["name"], 112, 42)
 		b.toggle_mode = true
 		b.pressed.connect(func():
 			Audio.play("click")
@@ -213,7 +214,7 @@ func _build_new_panel(row: HBoxContainer) -> void:
 		_diff_buttons[d] = b
 	_diff_desc = UITheme.label("", 14, UITheme.TEXT)
 	_diff_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_diff_desc.custom_minimum_size = Vector2(440, 44)
+	_diff_desc.custom_minimum_size = Vector2(472, 44)
 	vb.add_child(_diff_desc)
 	vb.add_child(UITheme.label("Map seed", 14, UITheme.TEXT_DIM))
 	var sr := HBoxContainer.new()
@@ -235,7 +236,8 @@ func _build_new_panel(row: HBoxContainer) -> void:
 	go.add_theme_stylebox_override("hover", UITheme.box(Color(0.14, 0.46, 0.47, 1.0), Color.WHITE, 2, 7))
 	go.pressed.connect(_start)
 	vb.add_child(go)
-	_set_diff(_diff)
+	# First campaign: start on Recruit. Returning commanders default to Regular.
+	_set_diff("recruit" if Session.highscores().is_empty() else "regular")
 
 
 func _set_diff(d: String) -> void:

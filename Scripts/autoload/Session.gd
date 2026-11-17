@@ -1,8 +1,9 @@
 extends Node
 ## Cross-scene session data: how the next game should start, save games and high scores.
 
-const SAVE_PATH := "user://savegame.dat"
-const SCORES_PATH := "user://highscores.cfg"
+## Tests pass "-- --sandbox" so they never touch the player's real save or Hall of Fame.
+var SAVE_PATH := "user://sandbox_savegame.dat" if OS.get_cmdline_user_args().has("--sandbox") else "user://savegame.dat"
+var SCORES_PATH := "user://sandbox_highscores.cfg" if OS.get_cmdline_user_args().has("--sandbox") else "user://highscores.cfg"
 const MAX_SCORES := 8
 
 var pending := {"mode": "new", "seed": 0, "difficulty": "veteran"}

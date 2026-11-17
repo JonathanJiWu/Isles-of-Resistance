@@ -1,55 +1,74 @@
 extends Node
-## Procedurally synthesized sound effects and ambient music. No audio assets are required.
+## Procedurally synthesized sound effects and music. No audio assets are required.
+## Music cues ("theme", "planning", "battle") are rendered by MusicSynth on a worker thread
+## the first time the game runs, cached in user://, and crossfaded on demand.
 
 const RATE := 22050
-const MUSIC_RATE := 16000
 const POOL_SIZE := 16
+const MUSIC_VERSION := 4
+const TRACKS := ["theme", "planning", "battle"]
+const SILENT_DB := -80.0
 
 var sounds := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
 var _last_played := {}
-var _music: AudioStreamPlayer
-var _music_stream: AudioStreamWAV
-var _music_task := -1
-var _music_data := PackedFloat32Array()
-var _noise := RandomNumberGenerator.new()
+var _music_players := {}
+var _music_tweens := {}
+var _wanted := ""
+var _current := ""
+var _tasks: Array = []
+var _mutex := Mutex.new()
+var _rendered := {}
 
 
 func _ready() -> void:
-	_noise.seed = 1337
+	# Keep sound and music running while the game is paused (pause menu clicks, ambience).
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"
 		add_child(p)
 		_players.append(p)
-	_music = AudioStreamPlayer.new()
-	_music.bus = "Music"
-	_music.volume_db = -6.0
-	add_child(_music)
+	for t in TRACKS:
+		var mp := AudioStreamPlayer.new()
+		mp.bus = "Music"
+		mp.volume_db = SILENT_DB
+		add_child(mp)
+		_music_players[t] = mp
 	_build_sounds()
-	_music_task = WorkerThreadPool.add_task(_generate_music)
+	var missing: Array = []
+	for t in TRACKS:
+		var cached := _load_cached(t)
+		if cached.is_empty():
+			missing.append(t)
+		else:
+			_install(t, cached)
+	# Render missing cues in parallel; each finishes independently.
+	for t in missing:
+		_tasks.append(WorkerThreadPool.add_task(_render_track.bind(t)))
 
 
 func _process(_delta: float) -> void:
-	if _music_task >= 0 and WorkerThreadPool.is_task_completed(_music_task):
-		WorkerThreadPool.wait_for_task_completion(_music_task)
-		_music_task = -1
-		_music_stream = _to_wav(_music_data, MUSIC_RATE)
-		_music_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		_music_stream.loop_begin = 0
-		_music_stream.loop_end = _music_data.size()
-		_music.stream = _music_stream
-		_music.volume_db = -40.0
-		_music.play()
-		create_tween().tween_property(_music, "volume_db", -6.0, 4.0)
-		set_process(false)
+	if _tasks.is_empty():
+		return
+	_mutex.lock()
+	var done := _rendered.duplicate()
+	_rendered.clear()
+	_mutex.unlock()
+	for t in done:
+		_install(t, done[t])
+		_save_cached(t, done[t])
+	for id in _tasks.duplicate():
+		if WorkerThreadPool.is_task_completed(id):
+			WorkerThreadPool.wait_for_task_completion(id)
+			_tasks.erase(id)
 
 
 func _exit_tree() -> void:
-	if _music_task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_music_task)
-		_music_task = -1
+	for id in _tasks:
+		WorkerThreadPool.wait_for_task_completion(id)
+	_tasks.clear()
 
 
 func play(sound_name: String, volume_db: float = 0.0, pitch_var: float = 0.06) -> void:
@@ -65,6 +84,103 @@ func play(sound_name: String, volume_db: float = 0.0, pitch_var: float = 0.06) -
 	p.volume_db = volume_db
 	p.pitch_scale = 1.0 + randf_range(-pitch_var, pitch_var)
 	p.play()
+
+
+# --------------------------------------------------------------------------------------------
+# Music
+# --------------------------------------------------------------------------------------------
+
+## Crossfades to a music cue ("theme", "planning", "battle", or "" for silence).
+## The planning cue keeps its place when interrupted so it resumes smoothly after battles.
+func music(track: String, fade: float = 1.6) -> void:
+	_wanted = track
+	_apply_music(fade)
+
+
+func current_music() -> String:
+	return _current
+
+
+func music_ready(track: String) -> bool:
+	return _music_players.has(track) and _music_players[track].stream != null
+
+
+func _apply_music(fade: float) -> void:
+	if _wanted == _current:
+		return
+	if _wanted != "" and not music_ready(_wanted):
+		return
+	var prev := _current
+	_current = _wanted
+	for t in _music_players:
+		var mp: AudioStreamPlayer = _music_players[t]
+		if mp.stream == null:
+			continue
+		if t != _current and not mp.playing:
+			continue
+		if _music_tweens.has(t) and _music_tweens[t] != null:
+			_music_tweens[t].kill()
+		var tw := create_tween()
+		_music_tweens[t] = tw
+		var from := clampf(db_to_linear(mp.volume_db), 0.0, 1.0)
+		if t == _current:
+			if not mp.playing:
+				from = 0.0
+				mp.play(0.0)
+			elif t == "battle" and prev != "battle":
+				mp.play(0.0)
+			# Equal-power fade in from the current level.
+			tw.tween_method(func(p: float): mp.volume_db = linear_to_db(maxf(lerpf(from, 1.0, sin(p * PI * 0.5)), 0.0001)), 0.0, 1.0, fade)
+		else:
+			tw.tween_method(func(p: float): mp.volume_db = linear_to_db(maxf(from * cos(p * PI * 0.5), 0.0001)), 0.0, 1.0, fade)
+			# Planning keeps rolling silently underneath; other cues stop once faded out.
+			if t != "planning" or _current == "theme" or _current == "":
+				tw.tween_callback(mp.stop)
+
+
+func _install(track: String, pcm: PackedByteArray) -> void:
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = MusicSynth.SR
+	w.stereo = false
+	w.data = pcm
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = pcm.size() / 2
+	_music_players[track].stream = w
+	if _wanted == track:
+		_apply_music(2.5)
+
+
+func _render_track(track: String) -> void:
+	var synth := MusicSynth.new(TRACKS.find(track) * 101 + 7)
+	var pcm := MusicSynth.to_pcm16(synth.render(track))
+	_mutex.lock()
+	_rendered[track] = pcm
+	_mutex.unlock()
+
+
+func _cache_path(track: String) -> String:
+	return "user://music_v%d_%s.pcm" % [MUSIC_VERSION, track]
+
+
+func _load_cached(track: String) -> PackedByteArray:
+	var path := _cache_path(track)
+	if not FileAccess.file_exists(path):
+		return PackedByteArray()
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return PackedByteArray()
+	var data := f.get_buffer(f.get_length())
+	f.close()
+	return data if data.size() > 1000 else PackedByteArray()
+
+
+func _save_cached(track: String, pcm: PackedByteArray) -> void:
+	var f := FileAccess.open(_cache_path(track), FileAccess.WRITE)
+	if f != null:
+		f.store_buffer(pcm)
+		f.close()
 
 
 # --------------------------------------------------------------------------------------------
@@ -276,85 +392,3 @@ func _explosion(dur: float, decay: float, sub: float) -> PackedFloat32Array:
 		b[i] = y2 * 2.2 * exp(-t * decay) + sin(TAU * sub * t * (1.0 - t * 0.15)) * 0.6 * exp(-t * decay * 1.3) + crack
 	_fade_edges(b, 0.05)
 	return b
-
-
-# --------------------------------------------------------------------------------------------
-# Ambient music: a seamless 32-second loop of slow pads in D minor with a sparse arpeggio.
-# Generated on a worker thread at startup.
-# --------------------------------------------------------------------------------------------
-
-func _generate_music() -> void:
-	var rate := MUSIC_RATE
-	var seg := 8.0
-	var loop_len := seg * 4.0
-	var n := int(loop_len * rate)
-	var out := PackedFloat32Array()
-	out.resize(n)
-	# Chords: Dm, Bb, F, C  (frequencies snapped to 1/32 Hz so the loop is phase-continuous)
-	var chords := [
-		[146.83, 174.61, 220.0, 293.66],
-		[116.54, 174.61, 233.08, 293.66],
-		[130.81, 174.61, 220.0, 261.63],
-		[130.81, 164.81, 196.0, 261.63],
-	]
-	var roots := [73.42, 58.27, 87.31, 65.41]
-	var fade := 2.5
-	for ci in chords.size():
-		var freqs: Array = []
-		for f in chords[ci]:
-			freqs.append(_snap(f, loop_len))
-		var root := _snap(roots[ci], loop_len)
-		var detune := 5.0 / loop_len
-		for i in n:
-			var t := float(i) / rate
-			var local := fposmod(t - ci * seg + fade, loop_len)
-			if local > seg + fade * 2.0:
-				continue
-			var env := 1.0
-			if local < fade * 2.0:
-				env = 0.5 - 0.5 * cos(PI * local / (fade * 2.0))
-			elif local > seg:
-				env = 0.5 + 0.5 * cos(PI * (local - seg) / (fade * 2.0))
-			var v := 0.0
-			for f in freqs:
-				v += sin(TAU * f * t) + sin(TAU * (f + detune) * t) * 0.6
-			v *= 0.05
-			v += sin(TAU * root * t) * 0.14 + sin(TAU * root * 2.0 * t) * 0.04
-			out[i] += v * env
-	# Sparse plucked arpeggio
-	var pattern := [0, 2, 3, 1, 2, 3, 1, 0]
-	for ci in chords.size():
-		for k in 8:
-			var start := ci * seg + k * 1.0 + 0.5
-			if start > loop_len - 1.2:
-				continue
-			var f: float = _snap(chords[ci][pattern[k]] * 2.0, loop_len)
-			var i0 := int(start * rate)
-			var len := int(1.1 * rate)
-			for j in len:
-				if i0 + j >= n:
-					break
-				var tt := float(j) / rate
-				var e := exp(-tt * 3.2) * minf(tt * 200.0, 1.0)
-				out[i0 + j] += (sin(TAU * f * tt) + 0.3 * sin(TAU * f * 2.0 * tt)) * e * 0.045
-	# Gentle surf wash, silent at every 8s boundary so the loop stays seamless
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 99
-	var y := 0.0
-	var y2 := 0.0
-	for i in n:
-		var t := float(i) / rate
-		y += (rng.randf_range(-1.0, 1.0) - y) * 0.06
-		y2 += (y - y2) * 0.1
-		var swell := pow(sin(PI * fposmod(t, seg) / seg), 2.0)
-		out[i] += y2 * swell * 0.5
-	var m := 0.0001
-	for v in out:
-		m = maxf(m, absf(v))
-	for i in n:
-		out[i] = out[i] / m * 0.6
-	_music_data = out
-
-
-func _snap(f: float, loop_len: float) -> float:
-	return roundf(f * loop_len) / loop_len

@@ -366,27 +366,44 @@ func _run_campaign(sd: int, diff: String, skill: float, max_turns: int, strategy
 
 func balance_report() -> void:
 	print("")
-	print("Balance report (bot commander, 12 seeds per difficulty)")
-	for combo in [["recruit", "defend"], ["veteran", "defend"], ["commander", "defend"], ["veteran", "hunter"], ["commander", "hunter"]]:
-		var diff: String = combo[0]
-		var strategy: String = combo[1]
-		var wins := 0
-		var fleet := 0
-		var turns := 0
-		var scores := 0
-		var cities := 0
-		var n := 12
-		for i in n:
-			var st := _run_campaign(1000 + i * 37, diff, 1.0, 90, strategy)
-			if st.result == "victory":
-				wins += 1
-				if st.carriers.is_empty():
-					fleet += 1
-			turns += st.turn
-			scores += st.score
-			cities += st.stats["cities_lost"]
-		print("  %-9s %-6s wins %2d/%d (fleet kills %d)  avg turn %.1f  avg score %d  avg cities lost %.1f" % [diff, strategy, wins, n, fleet, float(turns) / n, scores / n, float(cities) / n])
-	var passive_turns := 0
-	for i in 6:
-		passive_turns += _run_campaign(2000 + i, "recruit", 0.0, 90).turn
-	print("  passive commander survives %.1f turns on average (recruit)" % (passive_turns / 6.0))
+	var n := 24
+	print("Balance report (%d seeds per row; normal = full bot, novice = half-hearted bot)" % n)
+	var only := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--only="):
+			only = a.substr(7)
+	for diff in Defs.DIFFICULTY_ORDER:
+		if only != "" and diff != only:
+			continue
+		for skill in [1.0, 0.5]:
+			var wins := 0
+			var turns := 0
+			var cities := 0
+			var wave_dmg := {}
+			var wave_runs := {}
+			var lost_wave := 0
+			for i in n:
+				var st := _run_campaign(1000 + i * 37, diff, skill, 90)
+				if st.result == "victory":
+					wins += 1
+				else:
+					lost_wave += st.wave
+				turns += st.turn
+				cities += st.stats["cities_lost"]
+				for w in range(1, st.wave + 1):
+					wave_runs[w] = wave_runs.get(w, 0) + 1
+					wave_dmg[w] = wave_dmg.get(w, 0) + st.stats["wave_damage"].get(w, 0)
+			var curve: Array = []
+			for w in range(1, Defs.DIFFICULTY[diff]["waves"] + 1):
+				if wave_runs.has(w):
+					curve.append(str(int(round(float(wave_dmg[w]) / wave_runs[w]))))
+			var losses := n - wins
+			print("  %-9s %-6s wins %5.1f%%  avg turn %4.1f  cities lost %.1f  avg wave reached on loss %s" % [diff, "normal" if skill >= 1.0 else "novice", 100.0 * wins / n, float(turns) / n, float(cities) / n, ("%.1f" % (float(lost_wave) / losses)) if losses > 0 else "-"])
+			print("            damage per wave: " + " ".join(curve))
+	for diff in Defs.DIFFICULTY_ORDER:
+		if only != "" and diff != only:
+			continue
+		var passive_turns := 0
+		for i in 6:
+			passive_turns += _run_campaign(2000 + i, diff, 0.0, 90).turn
+		print("  passive commander survives %.1f turns on %s" % [passive_turns / 6.0, diff])

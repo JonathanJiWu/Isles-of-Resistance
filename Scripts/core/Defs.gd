@@ -202,25 +202,31 @@ const TECHS := {
 		"desc": "Air strikes and cruise missiles deal +50% damage to carriers."},
 }
 
+## Enemy wave budget for wave w = (base + growth * (w - 1)), scaled down as carriers are sunk.
 const DIFFICULTY := {
 	"recruit": {
-		"name": "Recruit", "supplies": 140, "budget": 0.75, "waves": 8, "carriers": 2, "carrier_hp": 120,
+		"name": "Recruit", "supplies": 150, "base": 9.0, "growth": 5.0, "waves": 8, "carriers": 2, "carrier_hp": 120,
 		"cities": 4, "score_mult": 0.75,
-		"desc": "8 waves. Lighter raids and generous starting supplies. Recommended for your first campaign.",
+		"desc": "8 waves of light raids and generous supplies. Recommended for your first campaign.",
+	},
+	"regular": {
+		"name": "Regular", "supplies": 130, "base": 14.0, "growth": 7.6, "waves": 10, "carriers": 2, "carrier_hp": 140,
+		"cities": 4, "score_mult": 1.0,
+		"desc": "10 waves. A fair fight once you know your flak from your SAMs.",
 	},
 	"veteran": {
-		"name": "Veteran", "supplies": 110, "budget": 1.12, "waves": 10, "carriers": 2, "carrier_hp": 160,
-		"cities": 4, "score_mult": 1.0,
-		"desc": "10 waves. A balanced campaign against a capable, adaptive enemy.",
+		"name": "Veteran", "supplies": 110, "base": 16.5, "growth": 9.0, "waves": 10, "carriers": 2, "carrier_hp": 160,
+		"cities": 4, "score_mult": 1.25,
+		"desc": "10 heavier waves. The adaptive enemy punishes one-dimensional defenses.",
 	},
 	"commander": {
-		"name": "Commander", "supplies": 90, "budget": 1.3, "waves": 12, "carriers": 3, "carrier_hp": 180,
+		"name": "Commander", "supplies": 95, "base": 18.5, "growth": 9.7, "waves": 12, "carriers": 3, "carrier_hp": 180,
 		"cities": 4, "score_mult": 1.5,
 		"desc": "12 waves and three carriers. The enemy commits everything. Score x1.5.",
 	},
 }
 
-const DIFFICULTY_ORDER := ["recruit", "veteran", "commander"]
+const DIFFICULTY_ORDER := ["recruit", "regular", "veteran", "commander"]
 
 const SECTORS := ["North", "North-East", "East", "South-East", "South"]
 

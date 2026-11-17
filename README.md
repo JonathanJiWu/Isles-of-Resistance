@@ -25,8 +25,9 @@ An enemy carrier fleet is closing on your islands and launching wave after wave 
 - **Research system.** A 15-technology tree unlocks SAM Sites, Shelter Networks, Decoy Sites, AA Frigates, Missile Batteries and Laser Defense, plus many upgrades.
 - **Counterattacks.** Find the carriers hiding in the eastern sea, then hit them with Air Strikes from Airbases or Cruise Missiles from Missile Batteries. Every carrier sunk shrinks future waves.
 - **Real-time battle animations.** Flak bursts, SAM trails, laser beams, dogfights, falling bombs, explosions and screen shake play out during the enemy phase. Skip them at any time with <kbd>Space</kbd>, speed them up, or turn them off in Settings.
-- **Polish.** Animated title screen, three difficulty levels, autosave and Continue, a Hall of Fame, tutorial hints, an in-game How to Play guide, and settings for audio, animation speed and display.
-- **No external assets.** All art is procedural vector drawing and every sound and the music are synthesized at startup. The only bundled asset is the [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) font (SIL OFL).
+- **Polish.** Animated title screen, four difficulty levels with an even ramp, autosave and Continue, a Hall of Fame, tutorial hints, an in-game How to Play guide, and settings for audio, animation speed and display.
+- **Music and sound.** Three procedurally composed music cues (title theme, a calm planning track and a driving battle track that crossfades in during the enemy phase) plus synthesized sound effects. The music is rendered on background threads on first launch and cached.
+- **No external assets.** All art is procedural vector drawing and every sound is synthesized in code. The only bundled asset is the [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) font (SIL OFL).
 
 | | |
 |---|---|
@@ -42,7 +43,17 @@ An enemy carrier fleet is closing on your islands and launching wave after wave 
 6. **Strike back.** Fly a Recon Flight over the eastern sea, then hit spotted carriers from an Airbase (range 10) or a Missile Battery (range 12).
 7. Press <kbd>Space</kbd> to end your turn.
 
-**Win** by surviving every wave (8, 10 or 12 depending on difficulty) or by sinking every carrier. **Lose** if your Capital falls.
+**Win** by surviving every wave or by sinking every carrier. **Lose** if your Capital falls.
+
+### Difficulty
+| Level | Waves | Carriers | Starting supplies | Notes |
+|---|---|---|---|---|
+| Recruit | 8 | 2 | 150 | Light raids. Recommended for your first campaign. |
+| Regular | 10 | 2 | 130 | A fair fight once you know your flak from your SAMs. |
+| Veteran | 10 | 2 | 110 | Heavier waves that punish one-dimensional defenses. |
+| Commander | 12 | 3 | 95 | The enemy commits everything. Score x1.5. |
+
+Every wave is larger than the last, and new aircraft types (cruise missiles from wave 4, stealth bombers from wave 6) are phased in over several waves rather than all at once. The levels were tuned with simulated campaigns so each one is a similar step up from the previous one (`tests/run_tests.gd -- --balance` prints the numbers).
 
 ### Controls
 | Action | Input |
@@ -66,7 +77,7 @@ An enemy carrier fleet is closing on your islands and launching wave after wave 
 - **Language:** GDScript
 - **Game logic:** a deterministic, engine-independent simulation (`Scripts/core`) that emits event streams for the view layer to animate
 - **Persistence:** local saves, settings and high scores in Godot's `user://` directory
-- **Testing:** a headless GDScript test suite with simulated full campaigns (`tests/`)
+- **Testing:** a headless GDScript test suite with simulated full campaigns, plus a rendered mouse-and-keyboard playtest (`tests/`)
 - **CI/CD:** GitHub Actions runs the test suite on every push (`.github/workflows/tests.yml`)
 
 The `backend/` folder holds the original C++ server skeleton (WebSocket/REST/SQLite plan) from before the project switched to Godot. The game does not use it; it is kept as a starting point for future online features.
@@ -96,7 +107,12 @@ $ godot --headless --path . -s tests/check_scripts.gd  # compile every script
 $ godot --headless --path . -s tests/run_tests.gd      # unit tests + simulated campaigns
 $ godot --headless --path . -s tests/run_tests.gd -- --balance   # adds a balance report
 ```
-`tests/screenshots.gd` drives the real, rendered game through its main screens and saves screenshots (`godot --path . -s tests/screenshots.gd -- <output_dir>`).
+Two more scripts drive the real, rendered game (they need a display, e.g. `xvfb-run` on a server):
+```sh
+$ godot --path . -s tests/input_playtest.gd -- --sandbox                # plays the game with real mouse/keyboard events
+$ godot --path . -s tests/screenshots.gd -- --sandbox <output_dir>     # captures screenshots of the main screens
+```
+`--sandbox` keeps these runs away from your real save, settings and Hall of Fame.
 
 ## Building & Deployment
 Install the export templates (**Editor → Manage Export Templates**), then add presets for Windows, macOS, Linux or Web under **Project → Export**. For example:
@@ -116,7 +132,7 @@ Scripts/
   core/             Defs (game data), Hex math, Pathfinder, MapGen, GameState (rules), EnemyAI
   view/             MapView, FogView, entity nodes, Effects (particles/projectiles), CameraRig, Icons (vector art)
   ui/               HUD, research tree, modals (settings, pause, how to play, game over), MainMenu, theme
-  autoload/         Settings, Audio (sound synthesis), Session (saves & high scores), Transition
+  autoload/         Settings, Audio (sound effects & music playback), MusicSynth (procedural composer), Session (saves & high scores), Transition
   Game.gd           scene controller: input modes and battle playback
 Shaders/            animated ocean
 Assets/fonts/       Chakra Petch (SIL Open Font License)

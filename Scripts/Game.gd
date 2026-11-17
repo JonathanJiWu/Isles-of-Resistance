@@ -78,6 +78,7 @@ func _ready() -> void:
 	hud.show_selection(Hex.INVALID)
 	hud.banner("TURN %d" % state.turn, UITheme.ACCENT, 1.2)
 	Session.save_game(state)
+	Audio.music("planning")
 	_maybe_hint()
 
 
@@ -331,6 +332,19 @@ func _update_hover() -> void:
 
 func _hex_under_mouse() -> Vector2i:
 	var m := get_global_mouse_position()
+	# Aircraft are drawn above their hex: pointing at a visible aircraft means its hex.
+	var best_d := 18.0
+	var best := Hex.INVALID
+	for id in e_nodes:
+		var n: AircraftNode = e_nodes[id]
+		if not is_instance_valid(n) or not n.visible or not state.enemies.has(id):
+			continue
+		var d := n.position.distance_to(m)
+		if d < best_d:
+			best_d = d
+			best = state.enemies[id]["pos"]
+	if best != Hex.INVALID:
+		return best
 	var h := Hex.from_pixel(m)
 	# Raised terrain: prefer the hex whose raised top face contains the cursor.
 	var below := h + Hex.DIRS[5]
@@ -673,11 +687,14 @@ func end_turn() -> void:
 	var events := state.end_turn()
 	if _is_over():
 		_record_result()
+	if not Settings.skip_animations:
+		Audio.music("battle", 0.8)
 	await play_events(events)
 	hud.set_busy(false)
 	if state.result != "":
 		_show_game_over()
 		return
+	Audio.music("planning", 2.5)
 	mode = Mode.IDLE
 	selected = Hex.INVALID
 	hud.show_selection(Hex.INVALID)
@@ -1310,6 +1327,7 @@ func _show_game_over() -> void:
 		_set_mode(Mode.OVER)
 		hud.refresh()
 		hud.show_selection(selected)
+		Audio.music("", 1.2)
 		Audio.play("victory" if state.result == "victory" else "defeat")
 		hud.banner("VICTORY" if state.result == "victory" else "DEFEAT", Defs.GOLD if state.result == "victory" else Defs.ENEMY_COLOR, 2.0)
 		_summary_wait = true

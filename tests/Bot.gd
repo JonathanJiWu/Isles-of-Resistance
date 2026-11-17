@@ -15,7 +15,7 @@ const HUNTER_PRIORITY := [
 ]
 
 var rng := RandomNumberGenerator.new()
-var skill := 1.0   # 0 = passive, 1 = normal
+var skill := 1.0   # 0 = passive, 0.5 = novice (builds every other turn, no air power), 1 = normal
 var strategy := "defend"   # defend | hunter
 
 
@@ -29,11 +29,13 @@ func play_turn(st: GameState) -> void:
 	if skill <= 0.0:
 		return
 	_research(st)
-	_repairs(st)
-	_strikes(st)
-	_units(st)
-	_produce(st)
-	_build(st)
+	if skill >= 1.0:
+		_repairs(st)
+		_strikes(st)
+		_units(st)
+		_produce(st)
+	if skill >= 1.0 or st.turn % 2 == 0:
+		_build(st)
 
 
 func _research(st: GameState) -> void:

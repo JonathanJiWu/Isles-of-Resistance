@@ -28,3 +28,12 @@ jobs:
 
       - name: Run test suite and simulated campaigns
         run: timeout 900 "$RUNNER_TEMP/godot" --headless --path . -s tests/run_tests.gd
+
+      - name: Install virtual display
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb libgl1-mesa-dri
+
+      - name: Mouse and keyboard playtest (rendered)
+        run: >
+          timeout 900 xvfb-run -a -s "-screen 0 1600x900x24"
+          "$RUNNER_TEMP/godot" --path . --resolution 1600x900 --rendering-driver opengl3
+          -s tests/input_playtest.gd -- --sandbox
