@@ -2,14 +2,16 @@ name: Release
 
 # Push a tag like v1.0.1 (matching application/config/version in project.godot)
 # to build the Windows installers and publish them as a GitHub release.
-# Re-running for an existing tag replaces that release's files.
+# Or run it by hand (Actions > Release > Run workflow) on a branch with a tag
+# name: the tag is created at that branch's commit if it doesn't exist yet.
+# Re-running for an existing release replaces its files.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build and publish (for example v1.0.0)
+        description: Release tag (for example v1.0.0). Created at the selected commit if it does not exist.
         required: true
 
 permissions:
@@ -26,11 +28,10 @@ jobs:
       GODOT_VERSION: 4.4.1
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      # The pushed tag, or the branch or tag chosen for a manual run.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
 
-      - name: Check the tag matches the project version
+      - name: Check the tag against the project version and commit
         run: |
           VERSION="${TAG#v}"
           PROJECT="$(sed -n 's/^config\/version="\(.*\)"$/\1/p' project.godot)"
@@ -38,7 +39,14 @@ jobs:
             echo "::error::Tag $TAG does not match application/config/version ($PROJECT) in project.godot"
             exit 1
           fi
+          COMMIT="$(git rev-parse HEAD)"
+          EXISTING="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | awk '{print $1}' | tail -1)"
+          if [ -n "$EXISTING" ] && [ "$EXISTING" != "$COMMIT" ]; then
+            echo "::error::Tag $TAG already points at $EXISTING, not the commit being built ($COMMIT)"
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "COMMIT=$COMMIT" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -91,7 +99,7 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$COMMIT" \
               --title "Isles of Resistance $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
           fi
 

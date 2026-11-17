@@ -189,7 +189,7 @@ Set `application/config/version` in `project.godot`, commit, and push a matching
 $ git tag v1.0.1
 $ git push origin v1.0.1
 ```
-The **Release** workflow builds both architectures, plays the exported game with the mouse-and-keyboard playtest, and publishes the GitHub release with every file attached. File names stay the same from release to release, so the download links at the top of this README always point to the newest version.
+Or open **Actions → Release → Run workflow**, pick the branch and enter the tag name; the tag is created at that commit. Either way, the **Release** workflow builds both architectures, plays the exported game with the mouse-and-keyboard playtest, and publishes the GitHub release with every file attached. File names stay the same from release to release, so the download links at the top of this README always point to the newest version.
 
 ### Other platforms
 Add presets for macOS, Linux or Web under **Project → Export**. For example:
