@@ -384,7 +384,7 @@ func refresh() -> void:
 		var cost := st.build_cost(kind)
 		var icon: IconRect = b.get_meta("icon")
 		var cost_l: Label = b.get_meta("cost")
-		b.disabled = locked != "" or _busy
+		b.disabled = locked != "" or _busy or st.result != ""
 		icon.dimmed = locked != ""
 		icon.queue_redraw()
 		if locked != "":
@@ -397,7 +397,7 @@ func refresh() -> void:
 			cost_l.add_theme_color_override("font_color", Defs.GOLD if st.supplies >= cost else Defs.BAD)
 		b.set_pressed_no_signal(_active_build == kind)
 		b.tooltip_text = _structure_tooltip(kind, locked)
-	_recon_btn.disabled = _busy or st.recon_used_turn == st.turn or st.supplies < Defs.RECON_COST
+	_recon_btn.disabled = _busy or st.result != "" or st.recon_used_turn == st.turn or st.supplies < Defs.RECON_COST
 	_refresh_end_button()
 	_refresh_intel()
 	if _log_hold == 0:
@@ -421,6 +421,11 @@ func _refresh_end_button() -> void:
 		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.3, 0.08, 0.1, 0.97), Defs.ENEMY_COLOR, 2, 7))
 		_end_btn.add_theme_stylebox_override("hover", UITheme.box(Color(0.4, 0.1, 0.13, 1.0), Color.WHITE, 2, 7))
 		_end_sub.text = "Enemy phase in progress  ·  SPACE to skip animations"
+	elif st.result != "":
+		_end_btn.text = "VICTORY  ·  SUMMARY" if st.result == "victory" else "DEFEAT  ·  SUMMARY"
+		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.1, 0.36, 0.38, 0.97), UITheme.ACCENT, 2, 7))
+		_end_btn.add_theme_stylebox_override("hover", UITheme.box(Color(0.14, 0.46, 0.47, 1.0), Color.WHITE, 2, 7))
+		_end_sub.text = "The campaign is over  ·  SPACE to view the summary"
 	else:
 		_end_btn.text = "END TURN  ▸"
 		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.1, 0.36, 0.38, 0.97), UITheme.ACCENT, 2, 7))
@@ -567,7 +572,7 @@ func _info_text(bb: String, size: int = 13) -> void:
 
 func _info_action(text: String, reason: String, action: String, id: int, tip: String = "") -> void:
 	var b := UITheme.button(text, 0, 36)
-	b.disabled = reason != "" or _busy
+	b.disabled = reason != "" or _busy or st.result != ""
 	b.tooltip_text = reason if reason != "" else tip
 	b.pressed.connect(func():
 		Audio.play("click")

@@ -38,6 +38,8 @@ var _skip := false
 var _token := 0
 var _hints := {}
 var _last_ruins := -1
+var _result_recorded := false
+var _summary_wait := false
 
 
 func _ready() -> void:
@@ -108,6 +110,7 @@ func _build_scene() -> void:
 	cam.make_current()
 	ui = CanvasLayer.new()
 	ui.layer = 10
+	ui.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(ui)
 	hud = HUD.new()
 	ui.add_child(hud)
@@ -116,7 +119,7 @@ func _build_scene() -> void:
 func _connect_hud() -> void:
 	hud.build_selected.connect(_on_build_selected)
 	hud.recon_selected.connect(_on_recon_selected)
-	hud.end_turn_pressed.connect(end_turn)
+	hud.end_turn_pressed.connect(_on_end_turn_button)
 	hud.skip_pressed.connect(skip)
 	hud.action_pressed.connect(_on_action)
 	hud.research_pressed.connect(open_research)
@@ -272,12 +275,12 @@ func _on_key(k: InputEventKey) -> void:
 		KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
 			if _animating:
 				skip()
-			elif mode == Mode.OVER:
+			elif _is_over():
 				_show_game_over()
 			else:
 				end_turn()
 		KEY_ESCAPE:
-			if mode in [Mode.BUILD, Mode.UNIT, Mode.RECON, Mode.STRIKE] or selected != Hex.INVALID:
+			if not _animating and (mode in [Mode.BUILD, Mode.UNIT, Mode.RECON, Mode.STRIKE] or selected != Hex.INVALID):
 				cancel()
 			else:
 				open_pause()
@@ -294,7 +297,8 @@ func _on_key(k: InputEventKey) -> void:
 		KEY_TAB:
 			_cycle_unit()
 		KEY_F1:
-			_open_modal(HowToPlayPanel.new())
+			if _modal == null or not is_instance_valid(_modal):
+				_open_modal(HowToPlayPanel.new())
 		_:
 			var n := -1
 			if k.keycode >= KEY_1 and k.keycode <= KEY_9:
@@ -403,7 +407,7 @@ func _hover_text(h: Vector2i) -> String:
 func _on_left_click(h: Vector2i) -> void:
 	if _animating or mode == Mode.BUSY:
 		return
-	if mode == Mode.OVER:
+	if _is_over():
 		_select(h)
 		return
 	match mode:
@@ -463,7 +467,10 @@ func _on_left_click(h: Vector2i) -> void:
 func cancel() -> void:
 	if _animating:
 		return
-	if mode == Mode.OVER:
+	if _is_over():
+		selected = Hex.INVALID
+		hud.show_selection(Hex.INVALID)
+		overlay_low.queue_redraw()
 		return
 	if mode != Mode.IDLE:
 		_set_mode(Mode.IDLE)
@@ -473,7 +480,13 @@ func cancel() -> void:
 	overlay_low.queue_redraw()
 
 
+func _is_over() -> bool:
+	return state != null and state.result != ""
+
+
 func _set_mode(m: Mode) -> void:
+	if _is_over() and m != Mode.BUSY:
+		m = Mode.OVER
 	mode = m
 	if m != Mode.BUILD:
 		build_kind = ""
@@ -490,7 +503,7 @@ func _set_mode(m: Mode) -> void:
 
 func _select(h: Vector2i) -> void:
 	selected = h
-	_set_mode(Mode.IDLE if mode != Mode.OVER else Mode.OVER)
+	_set_mode(Mode.IDLE)
 	if h != Hex.INVALID and mode != Mode.OVER:
 		var u := state.unit_at(h)
 		if not u.is_empty():
@@ -501,6 +514,8 @@ func _select(h: Vector2i) -> void:
 
 
 func _select_unit(u: Dictionary) -> void:
+	if _is_over():
+		return
 	mode = Mode.UNIT
 	selected_unit = u["id"]
 	selected = u["pos"]
@@ -529,7 +544,7 @@ func _cycle_unit() -> void:
 
 
 func _on_build_selected(kind: String) -> void:
-	if _animating or mode == Mode.OVER:
+	if _animating or _is_over():
 		return
 	var locked := state.build_locked_reason(kind)
 	if locked != "":
@@ -540,8 +555,8 @@ func _on_build_selected(kind: String) -> void:
 	if mode == Mode.BUILD and build_kind == kind:
 		_set_mode(Mode.IDLE)
 		return
-	_set_mode(Mode.BUILD)
 	build_kind = kind
+	_set_mode(Mode.BUILD)
 	hud.set_active_build(kind)
 	if state.supplies < state.build_cost(kind):
 		hud.toast("Not enough supplies for %s" % Defs.structure_name(kind))
@@ -549,7 +564,7 @@ func _on_build_selected(kind: String) -> void:
 
 
 func _on_recon_selected() -> void:
-	if _animating or mode == Mode.OVER:
+	if _animating or _is_over():
 		return
 	if state.recon_used_turn == state.turn:
 		hud.toast("Recon flight already flown this turn")
@@ -559,7 +574,7 @@ func _on_recon_selected() -> void:
 
 
 func _on_action(action: String, id: int) -> void:
-	if _animating:
+	if _animating or _is_over() or not state.structures.has(id):
 		return
 	match action:
 		"repair":
@@ -610,6 +625,8 @@ func _do_move(uid: int, h: Vector2i) -> void:
 func _do_attack(uid: int, eid: int) -> void:
 	var events := state.unit_attack(uid, eid)
 	await _run_player_events(events)
+	if _is_over():
+		return
 	if state.units.has(uid):
 		_select_unit(state.units[uid])
 		hud.show_selection(state.units[uid]["pos"])
@@ -624,6 +641,8 @@ func _do_strike(sid: int, cid: int) -> void:
 func _run_player_events(events: Array) -> void:
 	if events.is_empty():
 		return
+	if _is_over():
+		_record_result()
 	mode = Mode.BUSY
 	await play_events(events)
 	if state.result != "":
@@ -652,6 +671,8 @@ func end_turn() -> void:
 	hud.set_tooltip("")
 	hud.set_busy(true)
 	var events := state.end_turn()
+	if _is_over():
+		_record_result()
 	await play_events(events)
 	hud.set_busy(false)
 	if state.result != "":
@@ -667,6 +688,13 @@ func end_turn() -> void:
 	_maybe_hint()
 
 
+func _on_end_turn_button() -> void:
+	if _is_over():
+		_show_game_over()
+	else:
+		end_turn()
+
+
 func skip() -> void:
 	if _animating:
 		_skip = true
@@ -676,7 +704,8 @@ func _wait(sec: float) -> void:
 	var t := 0.0
 	while t < sec and not _skip:
 		await get_tree().process_frame
-		t += get_process_delta_time()
+		if not get_tree().paused:
+			t += get_process_delta_time()
 
 
 func play_events(events: Array) -> void:
@@ -909,8 +938,9 @@ func _launch(ev: Dictionary, follow: Array, delay: float, sp: float, token: int)
 					"cannon":
 						Audio.play("cannon", -5.0)
 						var un: UnitNode = u_nodes.get(ev["src_id"]) if ev["src"] == "unit" else null
-						if un != null:
-							un.lunge(b, travel * 1.6)
+						if un != null and state.units.has(un.id):
+							var uu: Dictionary = state.units[un.id]
+							un.lunge(b, travel * 1.3, _unit_pos(uu["kind"], uu["pos"]))
 						for q in 4:
 							effects.projectile("tracer", a, b + Vector2(randf_range(-4, 4), randf_range(-4, 4)), travel * (0.8 + q * 0.07), Color(0.6, 1.0, 1.0), on_hit if q == 0 else Callable())
 					"gun":
@@ -1209,11 +1239,18 @@ func _open_modal(m: Modal) -> void:
 	m.closed.connect(func():
 		if _modal == m:
 			_modal = null
-		sync_view())
+		if not _animating:
+			sync_view())
+
+
+## Opens a dialog on top of the current one (e.g. Settings from the pause menu).
+func _open_sub(m: Modal) -> void:
+	ui.add_child(m)
+	m.open_anim()
 
 
 func open_research() -> void:
-	if mode == Mode.OVER:
+	if _is_over():
 		return
 	if _modal is ResearchPanel:
 		_modal.close()
@@ -1236,33 +1273,54 @@ func open_pause() -> void:
 	if _modal != null and is_instance_valid(_modal):
 		return
 	var p := PauseMenu.new(state.seed_value)
+	get_tree().paused = true
+	p.closed.connect(func(): get_tree().paused = false)
 	p.save_requested.connect(func():
-		if _animating or state.phase != "player":
+		if _is_over():
+			hud.toast("The campaign is over")
+		elif _animating or state.phase != "player":
 			hud.toast("Cannot save during the enemy phase")
 		elif Session.save_game(state):
 			hud.toast("Game saved")
 		p.close())
 	p.quit_to_menu.connect(func():
 		_autosave()
+		get_tree().paused = false
 		Session.to_menu())
-	p.open_settings.connect(func(): _open_modal(SettingsPanel.new()))
-	p.open_help.connect(func(): _open_modal(HowToPlayPanel.new()))
+	p.open_settings.connect(func(): _open_sub(SettingsPanel.new()))
+	p.open_help.connect(func(): _open_sub(HowToPlayPanel.new()))
 	_open_modal(p)
 
 
+## Persists the outcome as soon as the simulation decides it, before any animation plays.
+func _record_result() -> void:
+	if _result_recorded:
+		return
+	_result_recorded = true
+	Session.delete_save()
+	state.set_meta("rank", Session.add_score(state))
+
+
 func _show_game_over() -> void:
-	if mode != Mode.OVER:
-		mode = Mode.OVER
-		Session.delete_save()
-		var rank := Session.add_score(state)
+	if _summary_wait or not _is_over():
+		return
+	if not state.has_meta("shown"):
+		state.set_meta("shown", true)
+		_record_result()
+		_set_mode(Mode.OVER)
+		hud.refresh()
+		hud.show_selection(selected)
 		Audio.play("victory" if state.result == "victory" else "defeat")
 		hud.banner("VICTORY" if state.result == "victory" else "DEFEAT", Defs.GOLD if state.result == "victory" else Defs.ENEMY_COLOR, 2.0)
+		_summary_wait = true
 		await get_tree().create_timer(1.2).timeout
-		state.set_meta("rank", rank)
+		_summary_wait = false
+	if _modal is GameOverPanel:
+		return
 	var p := GameOverPanel.new(state, state.get_meta("rank", -1))
 	p.new_game.connect(func(): Session.start_new(0, state.difficulty))
 	p.main_menu.connect(func(): Session.to_menu())
-	p.keep_viewing.connect(func(): hud.toast("Press SPACE to reopen the summary"))
+	p.keep_viewing.connect(func(): hud.toast("Press SPACE or the button at bottom right to reopen the summary"))
 	_open_modal(p)
 
 
@@ -1271,7 +1329,7 @@ func _show_game_over() -> void:
 # --------------------------------------------------------------------------------------------
 
 func _maybe_hint() -> void:
-	if not Settings.tutorial_hints or mode == Mode.OVER:
+	if not Settings.tutorial_hints or _is_over():
 		return
 	var key := ""
 	var text := ""

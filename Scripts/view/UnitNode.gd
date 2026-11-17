@@ -9,6 +9,7 @@ var hp := 1
 var max_hp := 1
 var spent := false
 var _t := 0.0
+var _move_tween: Tween
 
 
 func setup(u: Dictionary) -> void:
@@ -30,17 +31,20 @@ func update_from(u: Dictionary) -> void:
 func move_to(target: Vector2, dur: float) -> void:
 	if target.distance_to(position) > 1.0:
 		heading = (target - position).angle()
-	var tw := create_tween()
-	tw.tween_property(self, "position", target, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if _move_tween:
+		_move_tween.kill()
+	_move_tween = create_tween()
+	_move_tween.tween_property(self, "position", target, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
-func lunge(target: Vector2, dur: float) -> void:
-	var home := position
-	heading = (target - position).angle() if target.distance_to(position) > 1.0 else heading
-	var mid := position.lerp(target, 0.55)
-	var tw := create_tween()
-	tw.tween_property(self, "position", mid, dur * 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(self, "position", home, dur * 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+func lunge(target: Vector2, dur: float, home: Vector2) -> void:
+	if _move_tween:
+		_move_tween.kill()
+	heading = (target - home).angle() if target.distance_to(home) > 1.0 else heading
+	var mid := home.lerp(target, 0.55)
+	_move_tween = create_tween()
+	_move_tween.tween_property(self, "position", mid, dur * 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_move_tween.tween_property(self, "position", home, dur * 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
 
 
 func flash() -> void:

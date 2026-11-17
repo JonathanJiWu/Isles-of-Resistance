@@ -99,8 +99,18 @@ func _init() -> void:
 	await _shot("06_battle_a")
 	await _wait(1.3)
 	await _shot("07_battle_b")
-	while game._animating:
+	# Pausing mid-battle must freeze playback and resume cleanly.
+	game.open_pause()
+	await _wait(1.0)
+	print("paused during battle: ", paused, " animating: ", game._animating)
+	game._modal.close()
+	await _wait(0.3)
+	print("resumed: ", not paused)
+	var guard2 := 0
+	while game._animating and guard2 < 300:
+		guard2 += 1
 		await _wait(0.2)
+	print("battle finished after resume: ", not game._animating)
 	await _wait(0.5)
 	await _shot("08_after_battle")
 	game.cam.target_zoom = 1.0

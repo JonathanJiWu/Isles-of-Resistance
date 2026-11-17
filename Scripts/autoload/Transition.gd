@@ -6,6 +6,7 @@ var _busy := false
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 128
 	_rect = ColorRect.new()
 	_rect.color = Color(0.02, 0.04, 0.07, 0.0)
