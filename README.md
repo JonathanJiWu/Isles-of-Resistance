@@ -1,33 +1,79 @@
 # Isles of Resistance
 
+![Battle over the archipelago](docs/screenshots/battle.png)
+
 ## Overview
-"Isles of Resistance" is a single-player turn-based defense game set in a fictional archipelago. The player defends their islands against an AI-controlled air invasion using strategic deployments on a hex-based map. The game features real-time animations, a research system, and an adaptive AI opponent.
+"Isles of Resistance" is a single-player turn-based defense game set in a fictional archipelago. The player defends their islands against an AI-controlled air invasion using strategic deployments on a hex-based map. The game features real-time battle animations, a research system, and an adaptive AI opponent.
+
+An enemy carrier fleet is closing on your islands and launching wave after wave of drones, fighters, gunships, heavy bombers, cruise missiles and stealth bombers. Build air defenses, run reconnaissance, research new weapons, and decide when to strike back at the carriers themselves. Keep your Capital standing until every wave is repelled, or sink the whole fleet to end the war early.
 
 ## Features
-- **Turn-based Strategy:** Player vs. AI, alternating turns.
-- **Hex-based Map:** Terrain impacts movement and strategy.
-- **Fog of War:** Limited visibility, reconnaissance upgrades available.
-- **Resource Management:** Balance building defenses, research, and counterattacks.
-- **Enemy AI:** Dynamic AI that adapts to the player’s tactics.
-- **Research System:** Unlock new defenses and upgrades.
-- **Real-time Battle Animations:** Graphical representation of combat, skippable for fast play.
+- **Turn-based strategy.** You and the AI alternate turns. On your turn you build, research, fly your squadrons and launch operations. In the enemy phase, aircraft fly toward their targets while your defenses fire automatically.
+- **Hex-based map with meaningful terrain.** Every campaign generates a new archipelago from a seed.
+  - Hills give weapons +1 range.
+  - Forests camouflage structures.
+  - Mountains host long-range radar and force low-flying aircraft to detour.
+  - Harbors must touch the coast.
+  - Frigates sail the open water.
+- **Fog of war.** You only see what your structures and units can see. Extend it with Radar Stations, AA Frigates, once-per-turn Recon Flights, and recon research (Improved Radar, Coastwatchers, Phased Array, Satellite Uplink). Phased Array is also what reveals stealth bombers.
+- **Resource management.** Supplies come from your Capital, Cities and Harbors, and research points from your Capital and Labs. Spend them across construction, units, repairs, research and counterattacks. Losing a city cuts your income.
+- **Adaptive enemy AI.** The enemy has its own fog of war: it only knows what its aircraft have seen, plus any defense that fired at them.
+  - It routes around known air defenses and remembers where it took losses.
+  - It shifts its approach vector between waves.
+  - It re-balances each wave against your favorite weapons: low-altitude gunships against SAM networks, high bombers over flak belts, fighter escorts once interceptors appear.
+  - Every wave comes with an HQ Intelligence report describing how the enemy is adapting.
+- **Research system.** A 15-technology tree unlocks SAM Sites, Shelter Networks, Decoy Sites, AA Frigates, Missile Batteries and Laser Defense, plus many upgrades.
+- **Counterattacks.** Find the carriers hiding in the eastern sea, then hit them with Air Strikes from Airbases or Cruise Missiles from Missile Batteries. Every carrier sunk shrinks future waves.
+- **Real-time battle animations.** Flak bursts, SAM trails, laser beams, dogfights, falling bombs, explosions and screen shake play out during the enemy phase. Skip them at any time with <kbd>Space</kbd>, speed them up, or turn them off in Settings.
+- **Polish.** Animated title screen, three difficulty levels, autosave and Continue, a Hall of Fame, tutorial hints, an in-game How to Play guide, and settings for audio, animation speed and display.
+- **No external assets.** All art is procedural vector drawing and every sound and the music are synthesized at startup. The only bundled asset is the [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) font (SIL OFL).
+
+| | |
+|---|---|
+| ![Title screen](docs/screenshots/menu.png) | ![Research tree](docs/screenshots/research.png) |
+| ![Enemy wave inbound](docs/screenshots/wave.png) | ![Carrier strike](docs/screenshots/strike.png) |
+
+## How to Play
+1. **Build.** Pick a structure in the **CONSTRUCT** panel (or press <kbd>1</kbd>–<kbd>0</kbd>) and click a hex. Hover a button to see its stats, and hold <kbd>Shift</kbd> to place several.
+2. **Mind the altitude.** Flak shreds *low* flyers (drones, gunships, cruise missiles) but barely scratches *high* bombers. SAM Sites are the opposite, and Lasers hit everything. Radar coverage adds accuracy to every weapon firing into it.
+3. **Research** (<kbd>R</kbd>). Guided Missiles (SAM Sites) is a strong first pick.
+4. **Read the intel.** Red dashed lines show where spotted aircraft are heading. The HQ Intelligence panel tells you how the enemy is adapting.
+5. **Fly interceptors.** Airbases train squadrons. Move them next to an enemy and attack, or leave them idle to patrol. Idle squadrons engage anything that comes within 2 hexes.
+6. **Strike back.** Fly a Recon Flight over the eastern sea, then hit spotted carriers from an Airbase (range 10) or a Missile Battery (range 12).
+7. Press <kbd>Space</kbd> to end your turn.
+
+**Win** by surviving every wave (8, 10 or 12 depending on difficulty) or by sinking every carrier. **Lose** if your Capital falls.
+
+### Controls
+| Action | Input |
+|---|---|
+| Select / build / order | Left click |
+| Keep building | <kbd>Shift</kbd> + click |
+| Cancel | Right click or <kbd>Esc</kbd> |
+| Pan | <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, arrow keys, right/middle drag |
+| Zoom | Mouse wheel, <kbd>Q</kbd>/<kbd>E</kbd> |
+| Quick build | <kbd>1</kbd>–<kbd>0</kbd> |
+| Research tree | <kbd>R</kbd> |
+| Defense coverage overlay | <kbd>V</kbd> |
+| Next ready unit | <kbd>Tab</kbd> |
+| Center on Capital | <kbd>H</kbd> |
+| Toggle grid | <kbd>G</kbd> |
+| End turn / skip animations | <kbd>Space</kbd> |
+| Menu | <kbd>Esc</kbd> |
 
 ## Technology Stack
-- **Primary Language:** C++ (Game Logic, AI)
-- **Frontend:** JavaScript (React for UI, animations)
-- **Backend:** Python (Automation and AI enhancements)
-- **Networking:** WebSockets & REST API
-- **Database:** SQLite (Local for now, expandable to AWS DynamoDB)
-- **Deployment:** AWS (EC2 for backend, S3 & CloudFront for frontend, Lambda for automation)
-- **CI/CD:** GitHub Actions + AWS CodePipeline
-- **Testing:** Google Test (C++), Jest (JavaScript)
+- **Engine:** [Godot 4.4](https://godotengine.org/) (GL Compatibility renderer, so it runs on modest GPUs and can export to the web)
+- **Language:** GDScript
+- **Game logic:** a deterministic, engine-independent simulation (`Scripts/core`) that emits event streams for the view layer to animate
+- **Persistence:** local saves, settings and high scores in Godot's `user://` directory
+- **Testing:** a headless GDScript test suite with simulated full campaigns (`tests/`)
+- **CI/CD:** GitHub Actions runs the test suite on every push (`.github/workflows/tests.yml`)
+
+The `backend/` folder holds the original C++ server skeleton (WebSocket/REST/SQLite plan) from before the project switched to Godot. The game does not use it; it is kept as a starting point for future online features.
 
 ## Installation & Setup
 ### Prerequisites
-- C++ compiler (GCC/Clang/MSVC)
-- Node.js & npm (for frontend)
-- Python (for automation scripts)
-- AWS CLI (if deploying to AWS)
+- [Godot Engine 4.4 or newer](https://godotengine.org/download) (the standard build, not .NET)
 - Git
 
 ### Clone the Repository
@@ -36,32 +82,46 @@ $ git clone https://github.com/JonathanJiWu/isles-of-resistance.git
 $ cd isles-of-resistance
 ```
 
-### Backend Setup
+### Run the Game
+Open the project in the Godot editor (**Import → `project.godot`**) and press <kbd>F5</kbd>, or run it directly:
 ```sh
-$ cd backend
-$ mkdir build && cd build
-$ cmake ..
-$ make
-$ ./game_server
+$ godot --path .
+```
+The first launch imports assets, which takes a few seconds.
+
+### Run the Tests
+```sh
+$ godot --headless --path . --import                   # first time only
+$ godot --headless --path . -s tests/check_scripts.gd  # compile every script
+$ godot --headless --path . -s tests/run_tests.gd      # unit tests + simulated campaigns
+$ godot --headless --path . -s tests/run_tests.gd -- --balance   # adds a balance report
+```
+`tests/screenshots.gd` drives the real, rendered game through its main screens and saves screenshots (`godot --path . -s tests/screenshots.gd -- <output_dir>`).
+
+## Building & Deployment
+Install the export templates (**Editor → Manage Export Templates**), then add presets for Windows, macOS, Linux or Web under **Project → Export**. For example:
+```sh
+$ godot --headless --path . --export-release "Linux" builds/IslesOfResistance.x86_64
+```
+The Web export is a static site, so it can be hosted on any static host, such as AWS S3 + CloudFront:
+```sh
+$ godot --headless --path . --export-release "Web" builds/web/index.html
+$ aws s3 sync builds/web/ s3://your-s3-bucket-name
 ```
 
-### Frontend Setup
-```sh
-$ cd frontend
-$ npm install
-$ npm start
+## Project Structure
 ```
-
-## Deployment
-To deploy the backend to AWS EC2:
-```sh
-$ aws ec2 run-instances --image-id ami-12345678 --count 1 --instance-type t2.micro
-```
-
-To deploy the frontend to AWS S3:
-```sh
-$ npm run build
-$ aws s3 sync build/ s3://your-s3-bucket-name
+Scenes/             Main.tscn (title screen) and Game.tscn
+Scripts/
+  core/             Defs (game data), Hex math, Pathfinder, MapGen, GameState (rules), EnemyAI
+  view/             MapView, FogView, entity nodes, Effects (particles/projectiles), CameraRig, Icons (vector art)
+  ui/               HUD, research tree, modals (settings, pause, how to play, game over), MainMenu, theme
+  autoload/         Settings, Audio (sound synthesis), Session (saves & high scores), Transition
+  Game.gd           scene controller: input modes and battle playback
+Shaders/            animated ocean
+Assets/fonts/       Chakra Petch (SIL Open Font License)
+tests/              headless tests, test bot, screenshot automation
+backend/            legacy C++ server skeleton (unused by the game)
 ```
 
 ## Contributing
@@ -71,12 +131,10 @@ $ aws s3 sync build/ s3://your-s3-bucket-name
 4. Push to the branch (`git push origin feature-branch`).
 5. Open a Pull Request.
 
+Please run the test suite before opening a pull request.
+
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. The Chakra Petch font is licensed under the SIL Open Font License; see [Assets/fonts/OFL.txt](Assets/fonts/OFL.txt).
 
 ## Contact
 For any inquiries, reach out via email or open an issue on GitHub.
-
----
-This document will evolve as development progresses, ensuring we maintain a structured approach to delivering "Isles of Resistance."
-

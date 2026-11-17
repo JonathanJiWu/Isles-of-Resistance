@@ -10,12 +10,36 @@ config_version=5
 
 [application]
 
-config/name="New Game Project"
-run/main_scene="uid://cg70kfcch8ktt"
+config/name="Isles of Resistance"
+config/description="Turn-based archipelago air-defense strategy against an adaptive invasion."
+config/version="1.0.0"
+run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
+boot_splash/bg_color=Color(0.02, 0.05, 0.09, 1)
+boot_splash/show_image=false
 config/icon="res://icon.svg"
+
+[autoload]
+
+Settings="*res://Scripts/autoload/Settings.gd"
+Audio="*res://Scripts/autoload/Audio.gd"
+Session="*res://Scripts/autoload/Session.gd"
+Transition="*res://Scripts/autoload/Transition.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[gui]
+
+common/drop_mouse_on_gui_input_disabled=true
+timers/tooltip_delay_sec=0.35
 
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.02, 0.05, 0.09, 1)

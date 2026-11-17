@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  godot-tests:
+    runs-on: ubuntu-latest
+    env:
+      GODOT_VERSION: 4.4.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Godot
+        run: |
+          cd "$RUNNER_TEMP"
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          chmod +x godot
+
+      - name: Import project
+        run: timeout 300 "$RUNNER_TEMP/godot" --headless --path . --import
+
+      - name: Compile every script
+        run: timeout 300 "$RUNNER_TEMP/godot" --headless --path . -s tests/check_scripts.gd
+
+      - name: Run test suite and simulated campaigns
+        run: timeout 900 "$RUNNER_TEMP/godot" --headless --path . -s tests/run_tests.gd
