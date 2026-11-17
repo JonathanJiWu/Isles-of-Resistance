@@ -14,6 +14,8 @@ var _diff_buttons := {}
 var _diff_desc: Label
 var _new_panel: PanelContainer
 var _menu_box: VBoxContainer
+var _ticker: Label
+var _ticker_clip: Control
 
 
 func _ready() -> void:
@@ -106,7 +108,33 @@ func _spawn_flyer(initial: bool) -> void:
 	_flyers.append(n)
 
 
+func _build_ticker() -> void:
+	var strip := PanelContainer.new()
+	strip.add_theme_stylebox_override("panel", UITheme.box(Color(0.02, 0.03, 0.06, 0.85), Color(1.0, 0.45, 0.75, 0.35), 0, 0, Vector4(0, 2, 0, 2)))
+	strip.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	strip.offset_bottom = 24
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(strip)
+	_ticker_clip = Control.new()
+	_ticker_clip.clip_contents = true
+	_ticker_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strip.add_child(_ticker_clip)
+	var items: Array = []
+	for outlet in ["hnn", "ccb", "lpb", "sol"]:
+		var pool: Array = Lore.NEWS[outlet]["quiet"]
+		items.append("%s · %s" % [Lore.NEWS[outlet]["tag"], pool[randi() % pool.size()].format({"city": "Saltmere"})])
+	items.append(Lore.ADS[randi() % Lore.ADS.size()])
+	items.append(Lore.ADS[randi() % Lore.ADS.size()])
+	_ticker = UITheme.label("     ◆     ".join(items), 13, Color(0.95, 0.85, 0.95), UITheme.font_semibold)
+	_ticker.position = Vector2(1600, 1)
+	_ticker_clip.add_child(_ticker)
+
+
 func _process(delta: float) -> void:
+	if _ticker != null:
+		_ticker.position.x -= 60.0 * delta
+		if _ticker.position.x < -_ticker.size.x:
+			_ticker.position.x = _ticker_clip.size.x
 	_cam_t += delta
 	if _bg_cam != null:
 		_bg_cam.position += Vector2(cos(_cam_t * 0.05), sin(_cam_t * 0.07)) * delta * 9.0
@@ -133,7 +161,7 @@ func _build_ui() -> void:
 	col.add_theme_constant_override("separation", 6)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(col)
-	var kicker := UITheme.label("A TURN-BASED AIR DEFENSE CAMPAIGN", 15, Color(UITheme.ACCENT, 0.85), UITheme.font_semibold)
+	var kicker := UITheme.label("THE LANTERN STRAIT · A TURN-BASED AIR DEFENSE CAMPAIGN", 15, Color(1.0, 0.45, 0.75, 0.9), UITheme.font_semibold)
 	col.add_child(kicker)
 	var title_box := VBoxContainer.new()
 	title_box.add_theme_constant_override("separation", -26)
@@ -141,12 +169,16 @@ func _build_ui() -> void:
 	col.add_child(title_box)
 	var t1 := UITheme.label("ISLES OF", 64, UITheme.TEXT, UITheme.font_bold)
 	var t2 := UITheme.label("RESISTANCE", 80, UITheme.ACCENT, UITheme.font_bold)
-	for t in [t1, t2]:
-		t.add_theme_constant_override("outline_size", 10)
-		t.add_theme_color_override("font_outline_color", Color(0.01, 0.03, 0.06, 0.8))
-		title_box.add_child(t)
-	var sub := UITheme.label("Hold the archipelago. Outthink an enemy that learns.", 18, UITheme.TEXT_DIM)
+	t1.add_theme_constant_override("outline_size", 10)
+	t1.add_theme_color_override("font_outline_color", Color(0.01, 0.03, 0.06, 0.8))
+	t2.add_theme_constant_override("outline_size", 14)
+	t2.add_theme_color_override("font_outline_color", Color(0.31, 0.82, 0.77, 0.22))
+	title_box.add_child(t1)
+	title_box.add_child(t2)
+	var sub := UITheme.label("The old order is buffering. A rising power wants its turn. Tessera wants a vote.", 18, UITheme.TEXT)
 	col.add_child(sub)
+	var pro := UITheme.label("Tessera makes nearly every advanced chip on Earth. The Celestine Commonwealth calls it a lost province.\nThe Hesperian Federation calls it “strategically ambiguous.” Tonight, the Commonwealth declared a quarantine.", 14, UITheme.TEXT_DIM)
+	col.add_child(pro)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 30)
 	col.add_child(gap)
@@ -171,6 +203,7 @@ func _build_ui() -> void:
 	_menu_box.add_child(_menu_button("Quit", func(): get_tree().quit()))
 	_build_new_panel(row)
 	_build_scores()
+	_build_ticker()
 	var ver := UITheme.label("v%s  ·  Godot %s" % [Defs.VERSION, Engine.get_version_info()["string"]], 12, Color(UITheme.TEXT_DIM, 0.7))
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	ver.offset_left = 16

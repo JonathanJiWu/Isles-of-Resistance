@@ -348,3 +348,69 @@ static func ui_glyph(ci: CanvasItem, kind: String, c: Vector2, s: float, col: Co
 		"repair":
 			ci.draw_line(c + Vector2(-6, 6) * s, c + Vector2(4, -4) * s, col, 3.0 * s, true)
 			ci.draw_arc(c + Vector2(5, -5) * s, 3.5 * s, PI * 0.75, PI * 2.25, 10, col, 2.0 * s, true)
+		"resolve":
+			emblem(ci, "lantern", c, s * 0.75, col)
+		"ally":
+			emblem(ci, "compass", c, s * 0.75, col)
+		"intel":
+			ci.draw_rect(Rect2(c + Vector2(-8, -5) * s, Vector2(16, 12) * s), col, false, 1.6 * s)
+			ci.draw_rect(Rect2(c + Vector2(-8, -7) * s, Vector2(7, 3) * s), col)
+			for k in 3:
+				ci.draw_line(c + Vector2(-5, -1 + k * 3) * s, c + Vector2(5, -1 + k * 3) * s, col, 1.2 * s)
+		"cyber":
+			ci.draw_rect(Rect2(c + Vector2(-9, -7) * s, Vector2(18, 14) * s), col, false, 1.6 * s)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-6, -3) * s, c + Vector2(-2, 0) * s, c + Vector2(-6, 3) * s]), col, 1.6 * s, true)
+			ci.draw_line(c + Vector2(0, 3.5) * s, c + Vector2(5, 3.5) * s, col, 1.6 * s)
+
+
+## Faction emblems used on comms cards, directives and the Intel Archive.
+static func emblem(ci: CanvasItem, kind: String, c: Vector2, s: float, col: Color) -> void:
+	match kind:
+		"lantern":
+			ci.draw_line(c + Vector2(0, -13) * s, c + Vector2(0, -9) * s, col, 1.6 * s)
+			ci.draw_arc(c + Vector2(0, -13) * s, 2.0 * s, PI, TAU, 8, col, 1.4 * s, true)
+			var body := PackedVector2Array([c + Vector2(-5, -9) * s, c + Vector2(5, -9) * s, c + Vector2(7, -2) * s,
+				c + Vector2(5, 6) * s, c + Vector2(-5, 6) * s, c + Vector2(-7, -2) * s])
+			ci.draw_colored_polygon(body, Color(col, 0.35))
+			ci.draw_polyline(_closed(body), col, 1.6 * s, true)
+			ci.draw_circle(c + Vector2(0, -1.5) * s, 2.6 * s, Color(1.0, 0.9, 0.55, col.a))
+			for k in 3:
+				ci.draw_rect(Rect2(c + Vector2(-9 + k * 6.5, 9) * s, Vector2(5, 4) * s), col)
+		"star":
+			var pts := PackedVector2Array()
+			for k in 18:
+				var r := 11.0 if k % 2 == 0 else 5.0
+				var a := -PI / 2 + k * PI / 9.0
+				pts.append(c + Vector2(cos(a), sin(a)) * r * s + Vector2(0, -2) * s)
+			ci.draw_colored_polygon(pts, col)
+			var wave := PackedVector2Array()
+			for k in 13:
+				var x := -12.0 + k * 2.0
+				wave.append(c + Vector2(x, 11 + sin(k * 0.9) * 1.6) * s)
+			ci.draw_polyline(wave, col, 1.8 * s, true)
+		"compass":
+			ci.draw_arc(c, 11.0 * s, 0, TAU, 28, col, 1.6 * s, true)
+			for k in 4:
+				var a := k * PI * 0.5
+				var tip := c + Vector2.UP.rotated(a) * 13.0 * s
+				var l := c + Vector2.UP.rotated(a + 0.35) * 4.0 * s
+				var r := c + Vector2.UP.rotated(a - 0.35) * 4.0 * s
+				ci.draw_colored_polygon(PackedVector2Array([tip, l, c, r]), col if k % 2 == 0 else Color(col, 0.55))
+			ci.draw_circle(c, 2.0 * s, col)
+		"rings":
+			for k in 3:
+				ci.draw_arc(c + Vector2(-6 + k * 6, 0) * s, 6.5 * s, 0, TAU, 20, col, 1.8 * s, true)
+		"wafer":
+			ci.draw_arc(c, 11.0 * s, 0, TAU, 28, col, 1.8 * s, true)
+			for gx in range(-2, 3):
+				for gy in range(-2, 3):
+					if absi(gx) + absi(gy) <= 3:
+						ci.draw_rect(Rect2(c + Vector2(gx * 4.2 - 1.7, gy * 4.2 - 1.7) * s, Vector2(3.4, 3.4) * s), Color(col, 0.85))
+		"grid":
+			for k in 4:
+				ci.draw_line(c + Vector2(-10 + k * 6.6, -10) * s, c + Vector2(-10 + k * 6.6, 10) * s, col, 1.3 * s)
+				ci.draw_line(c + Vector2(-10, -10 + k * 6.6) * s, c + Vector2(10, -10 + k * 6.6) * s, col, 1.3 * s)
+			ci.draw_circle(c, 3.0 * s, col)
+		"null":
+			ci.draw_arc(c, 9.0 * s, 0, TAU, 24, col, 2.2 * s, true)
+			ci.draw_line(c + Vector2(-11, 11) * s, c + Vector2(11, -11) * s, col, 2.2 * s, true)

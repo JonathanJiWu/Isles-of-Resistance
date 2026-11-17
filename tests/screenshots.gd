@@ -32,6 +32,10 @@ func _init() -> void:
 	var game := current_scene
 	var st: GameState = game.state
 	await _shot("03_turn1")
+	game.open_intel()
+	await _wait(0.5)
+	await _shot("03b_intel_archive")
+	await _clear_ui(game)
 
 	# Build a few things like a player would, then preview a placement.
 	var bot := TestBot.new(7)
@@ -56,9 +60,17 @@ func _init() -> void:
 
 	# Play forward with the bot until a wave is airborne and visible.
 	Settings.skip_animations = true
+	var shot_directive := false
 	var guard := 0
 	while guard < 12:
 		guard += 1
+		if st.story.pending != "" and not shot_directive:
+			shot_directive = true
+			await _clear_ui(game)
+			game.open_directive()
+			await _wait(0.5)
+			await _shot("04b_directive")
+		await _clear_ui(game)
 		bot.play_turn(st)
 		game.sync_view()
 		await game.end_turn()
@@ -86,9 +98,16 @@ func _init() -> void:
 	await _shot("05_enemies_inbound")
 	game.show_coverage = false
 
+	await _clear_ui(game)
+	st.rp += 40
+	game.open_ops()
+	await _wait(0.5)
+	await _shot("05b_cyber_ops")
+	await _clear_ui(game)
 	# Watch a live enemy phase with animations, zoomed in on the defended Capital.
 	Settings.skip_animations = false
 	Settings.anim_speed = 1.0
+	await _clear_ui(game)
 	bot.play_turn(st)
 	game.sync_view()
 	game.cam.target_zoom = 1.25
@@ -116,11 +135,8 @@ func _init() -> void:
 	game.cam.target_zoom = 1.0
 
 	# Select a structure for the info panel.
-	var pick: Dictionary = st.capital()
-	for s in st.structures.values():
-		if s["kind"] == "airbase" or s["kind"] == "sam":
-			pick = s
-			break
+	var pick: Dictionary = st.structures.get(st.story.foundry_id, st.capital())
+	game.cam.center_on(Hex.to_pixel(pick["pos"]), true)
 	game.call("_select", pick["pos"])
 	await _wait(0.3)
 	await _shot("09_selection")
@@ -141,6 +157,9 @@ func _init() -> void:
 	guard = 0
 	while st.result == "" and guard < 80:
 		guard += 1
+		if game._modal != null and is_instance_valid(game._modal):
+			game._modal.close()
+		game.hud._comms.visible = false
 		bot.play_turn(st)
 		game.sync_view()
 		await game.end_turn()
@@ -188,6 +207,9 @@ func _init() -> void:
 	game.sync_view()
 	Settings.skip_animations = true
 	while st.turn < 4:
+		if st.story.pending != "":
+			st.choose_directive(0)
+		await _clear_ui(game)
 		await game.end_turn()
 		await _wait(0.2)
 	game.hud.hide_wave_alert()
@@ -245,6 +267,15 @@ func _init() -> void:
 	await _shot("19_defeat")
 	Session.delete_save()
 	quit()
+
+
+## Closes any open dialog and comms card so scripted play can continue.
+func _clear_ui(game) -> void:
+	if game._modal != null and is_instance_valid(game._modal):
+		game._modal.close()
+	game.hud._comms.visible = false
+	game.hud.hide_hint()
+	await _wait(0.25)
 
 
 func _wait(sec: float) -> void:

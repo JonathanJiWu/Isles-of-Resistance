@@ -165,4 +165,15 @@ static func kind_color(kind: String) -> Color:
 			return Defs.WARN
 		"intel":
 			return Defs.INTEL
+		"intercept":
+			return Color(1.0, 0.55, 0.78)
 	return TEXT_DIM
+
+
+## Emblem IconRect for a person (by Lore id).
+static func person_emblem(person_id: String, size: float = 44.0) -> IconRect:
+	var p: Dictionary = Lore.person(person_id)
+	var f: Dictionary = Lore.FACTIONS.get(p["faction"], Lore.FACTIONS["tessera"])
+	var icon := IconRect.new(f["emblem"], "emblem", size, size / 30.0)
+	icon.color = f["color"]
+	return icon

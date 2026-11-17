@@ -305,6 +305,8 @@ func _pick_value_target(st: GameState, e: Dictionary, targeted: Dictionary, caut
 		if s.is_empty():
 			continue
 		var v: float = VALUE.get(s["kind"], 2.0)
+		if s.get("foundry", false) and st.story != null:
+			v = st.story.foundry_value()
 		v *= 1.0 + 0.4 * (1.0 - float(s["hp"]) / s["max_hp"])
 		v /= 1.0 + 0.35 * targeted.get(id, 0)
 		var danger := _line_threat(e["pos"], s["pos"], edef["alt"])
@@ -497,6 +499,8 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 	var d: Dictionary = st.diff()
 	var alive := float(st.carriers.size())
 	var budget: float = (d["base"] + d["growth"] * (w - 1)) * (0.45 + 0.55 * alive / float(d["carriers"]))
+	if st.story != null:
+		budget *= st.story.budget_mult()
 	var flak := 0.0
 	var sam := 0.0
 	var laser := 0.0
@@ -535,6 +539,9 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 		weights["missile"] = 1.4 * minf(1.0, (w - missile_wave + 1) / 3.0)
 	if w >= stealth_wave:
 		weights["stealth"] = 1.6 * minf(1.0, (w - stealth_wave + 1) / 3.0)
+	if st.story != null and not st.story.allow_new_types():
+		weights.erase("missile")
+		weights.erase("stealth")
 	var notes: Array = []
 	if high_t > low_t * 1.3 and high_t >= 2.0:
 		weights["gunship"] *= 2.2
@@ -564,6 +571,13 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 			weights["stealth"] *= 1.4
 			if w == Defs.ENEMIES["stealth"]["min_wave"]:
 				notes.append("Stealth bombers sighted at enemy airfields. Phased Array radar can detect them.")
+	if st.story != null and st.story.glass == "cracked" and not st.story.flags.has("glass_noted"):
+		st.story.flags["glass_noted"] = true
+		notes.append("The Glass Shield is gone: Silica Point is now on their target list.")
+	if st.story != null and st.story.budget_mult() > 1.05:
+		notes.append("Political pressure in the Steering Council is putting more aircraft in the air.")
+	elif st.story != null and st.story.budget_mult() < 0.95:
+		notes.append("Their squadrons are thinner than usual tonight.")
 	if known.size() <= baseline_known + 1 and w >= 2:
 		weights["drone"] *= 2.0
 		notes.append("Enemy planners know little of your defenses: reconnaissance drones will probe the islands.")

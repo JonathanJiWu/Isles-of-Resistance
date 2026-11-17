@@ -3,7 +3,7 @@ extends RefCounted
 ## Complete, deterministic game model. Player actions and the enemy phase mutate the state
 ## and return a list of "events" (plain dictionaries) that the view layer animates.
 
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 
 var seed_value := 0
 var difficulty := "veteran"
@@ -32,6 +32,7 @@ var radar_cov := {}
 var recon: Array = []
 var recon_used_turn := -1
 var ai: EnemyAI
+var story: Campaign
 var stats := {}
 var score := 0
 var messages: Array = []
@@ -94,8 +95,10 @@ func _setup(p_seed: int, p_difficulty: String) -> void:
 				explored[h] = true
 	ai = EnemyAI.new()
 	ai.setup(self)
+	story = Campaign.new()
+	story.setup(self)
 	start_player_turn()
-	log_msg("Commander, an enemy carrier fleet is closing on the archipelago. The first wave launches at the end of turn %d." % next_wave_turn, "intel")
+	log_msg("The Celestine Commonwealth has declared a Peace Enforcement Quarantine over Tessera. The first wave launches at the end of turn %d." % next_wave_turn, "intel")
 
 
 func diff() -> Dictionary:
@@ -285,8 +288,12 @@ func income() -> int:
 	var inc := 0
 	for s in structures.values():
 		inc += int(Defs.STRUCTURES[s["kind"]].get("income", 0))
+	if story != null:
+		inc += story.foundry_income(self)
 	if has_tech("logistics"):
 		inc = int(round(inc * 1.2))
+	if story != null:
+		inc = int(round(inc * story.resolve_mult())) + story.convoy
 	return inc
 
 
@@ -294,7 +301,13 @@ func rp_income() -> int:
 	var r := 0
 	for s in structures.values():
 		r += int(Defs.STRUCTURES[s["kind"]].get("rp", 0))
+	if story != null:
+		r += story.foundry_rp(self)
 	return r
+
+
+func accuracy_bonus() -> float:
+	return story.accuracy_bonus if story != null else 0.0
 
 
 # --------------------------------------------------------------------------------------------
@@ -325,6 +338,8 @@ func compute_visibility() -> void:
 		if carrier_visible(c):
 			c["seen_pos"] = c["pos"]
 			c["seen_turn"] = turn
+			if story != null:
+				story.on_carrier_seen(self)
 
 
 func carrier_visible(c: Dictionary) -> bool:
@@ -634,6 +649,7 @@ func research(id: String) -> bool:
 					u["max_hp"] += 10
 					u["hp"] += 10
 	compute_visibility()
+	story.on_research(self, id)
 	log_msg("Research complete: %s." % Defs.TECHS[id]["name"], "good")
 	return true
 
@@ -719,6 +735,8 @@ func strike_check(sid: int, cid: int = -1) -> String:
 		return "No launch site"
 	if s["acted"]:
 		return "Already launched this turn"
+	if story != null and turn <= story.strike_lock_until:
+		return "Back-channel truce holds until turn %d" % story.strike_lock_until
 	if supplies < strike_cost(s):
 		return "Not enough supplies"
 	var targets := strike_targets(sid)
@@ -773,7 +791,8 @@ func _damage_carrier(c: Dictionary, dmg: int, events: Array) -> void:
 		var pts := int(round(500 * diff()["score_mult"]))
 		score += pts
 		events.append({"type": "destroyed", "tgt": "carrier", "id": c["id"], "pos": c["pos"], "kind": "carrier", "pts": pts})
-		log_msg("ENEMY CARRIER SUNK! %d remain. (+%d)" % [carriers.size(), pts], "good")
+		log_msg("%s SUNK! %d carriers remain. (+%d)" % [c.get("name", "ENEMY CARRIER").to_upper(), carriers.size(), pts], "good")
+		story.on_carrier_sunk(self, c)
 
 
 # --------------------------------------------------------------------------------------------
@@ -808,12 +827,20 @@ func start_player_turn() -> void:
 	compute_visibility()
 	if wave < waves_total and countdown() == 0:
 		log_msg("Wave %d launches at the end of this turn. Final preparations!" % (wave + 1), "warn")
+	if story != null:
+		story.on_turn_start(self)
 
 
 func end_turn() -> Array:
 	var events: Array = []
 	if phase != "player" or result != "":
 		return events
+	if story.pending != "":
+		# Directives should be answered by the player; fall back to the first affordable option.
+		var opts: Array = story.pending_data()["options"]
+		for i in opts.size():
+			if story.choose(self, i):
+				break
 	_sink = events
 	phase = "enemy"
 	_enemy_phase(events)
@@ -886,6 +913,8 @@ func _enemy_phase(events: Array) -> void:
 	if _phase_kills > 0 or _phase_hits > 0:
 		var kind := "good" if _phase_kills >= _phase_hits else "warn"
 		log_msg("Enemy phase report: %d aircraft downed, %d hits taken." % [_phase_kills, _phase_hits], kind)
+	if result == "":
+		story.on_enemy_phase_end(self, events)
 	_check_end(events)
 
 
@@ -960,6 +989,9 @@ func _launch_wave(events: Array) -> void:
 		"doctrine": plan["doctrine"],
 		"composition": comp if has_tech("satellite_uplink") else {},
 	}
+	story.on_wave_launched(self, report)
+	if report.get("revealed", false):
+		report["composition"] = comp
 	last_wave_report = report
 	events.append({"type": "wave", "report": report})
 	var where := ("from the %s" % plan["sector"]) if sector_seen else "(approach vector unknown)"
@@ -982,6 +1014,7 @@ func _check_waves_cleared(events: Array) -> void:
 			score += pts
 			events.append({"type": "wave_cleared", "wave": w})
 			log_msg("Wave %d repelled! (+%d)" % [w, pts], "good")
+			story.on_wave_cleared(self, w)
 
 
 func _check_end(events: Array) -> void:
@@ -989,13 +1022,13 @@ func _check_end(events: Array) -> void:
 		return
 	if not structures.has(capital_id):
 		result = "defeat"
-		result_reason = "The Capital has fallen. The archipelago is lost."
+		result_reason = "Lumen has fallen. The Quarantine becomes an occupation."
 	elif carriers.is_empty():
 		result = "victory"
-		result_reason = "Every enemy carrier lies at the bottom of the sea. The invasion is broken."
+		result_reason = "Every Harmony-class carrier lies at the bottom of the strait. The Quarantine is broken."
 	elif wave >= waves_total and enemies.is_empty():
 		result = "victory"
-		result_reason = "All %d waves repelled. The Isles stand free." % waves_total
+		result_reason = "All %d waves repelled. Tessera still stands." % waves_total
 	if result != "":
 		phase = "over"
 		_finalize()
@@ -1096,7 +1129,7 @@ func _pick_target(pos: Vector2i, r: int, wdef: Dictionary) -> Dictionary:
 func _fire(sh: Dictionary, wdef: Dictionary, e: Dictionary, events: Array) -> void:
 	sh["shots_left"] -= 1
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
-	var acc: float = wdef["acc"]
+	var acc: float = wdef["acc"] + accuracy_bonus()
 	if radar_cov.has(e["pos"]):
 		acc += radar_bonus()
 	if edef.get("stealth", false):
@@ -1118,7 +1151,7 @@ func _fire(sh: Dictionary, wdef: Dictionary, e: Dictionary, events: Array) -> vo
 
 func _dogfight(u: Dictionary, e: Dictionary, events: Array) -> void:
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
-	var acc: float = Defs.UNITS["interceptor"]["acc"]
+	var acc: float = Defs.UNITS["interceptor"]["acc"] + accuracy_bonus()
 	if radar_cov.has(e["pos"]):
 		acc += radar_bonus()
 	if edef.get("stealth", false):
@@ -1208,6 +1241,7 @@ func _enemy_strike_structure(e: Dictionary, s: Dictionary, events: Array) -> voi
 		"from": e["pos"], "to": s["pos"], "hit": hit, "vis": enemy_detected(e)})
 	if hit:
 		_phase_hits += 1
+		story.on_hit()
 		var center: Vector2i = s["pos"]
 		_damage_structure(s, _vary(edef["dmg"]), events)
 		if edef.has("splash"):
@@ -1227,6 +1261,7 @@ func _enemy_strike_unit(e: Dictionary, u: Dictionary, events: Array) -> void:
 		"from": e["pos"], "to": u["pos"], "hit": hit, "vis": enemy_detected(e)})
 	if hit:
 		_phase_hits += 1
+		story.on_hit()
 		_damage_unit(u, _vary(dmg), events)
 	if units.has(u["id"]) and u["kind"] == "interceptor" and enemies.has(e["id"]) and _roll(0.6):
 		var rd := _vary(u_dmg(u) * 0.7)
@@ -1284,6 +1319,7 @@ func _destroy_structure(s: Dictionary, events: Array) -> void:
 	structures.erase(s["id"])
 	ruins[s["pos"]] = s["kind"]
 	ai.on_structure_destroyed(s)
+	story.on_structure_destroyed(self, s)
 	match s["kind"]:
 		"capital":
 			log_msg("%s HAS FALLEN!" % s["name"], "bad")
@@ -1329,12 +1365,23 @@ func _damage_enemy(e: Dictionary, dmg: int, events: Array, source: String, shoot
 		if shooter is Dictionary and shooter.get("cls", "") == "structure":
 			shooter["kills"] += 1
 		ai.on_enemy_lost(self, e, source, shooter)
+		story.on_enemy_lost(self, e)
 		events.append({"type": "destroyed", "tgt": "enemy", "id": e["id"], "pos": e["pos"], "kind": e["kind"], "pts": pts})
 
 
 # --------------------------------------------------------------------------------------------
 # Messages and persistence
 # --------------------------------------------------------------------------------------------
+
+func choose_directive(idx: int) -> bool:
+	if phase != "player" or result != "":
+		return false
+	return story.choose(self, idx)
+
+
+func run_op(op: String) -> bool:
+	return story.run_op(self, op)
+
 
 func log_msg(text: String, kind: String = "info") -> void:
 	messages.append({"turn": turn, "text": text, "kind": kind})
@@ -1354,6 +1401,7 @@ func to_dict() -> Dictionary:
 		"recon_used_turn": recon_used_turn, "stats": stats, "score": score, "messages": messages,
 		"rng_seed": rng.seed, "rng_state": rng.state, "next_id": next_id, "waves_cleared": waves_cleared,
 		"last_wave_report": last_wave_report, "capital_id": capital_id, "ai": ai.to_dict(),
+		"story": story.to_dict(),
 	}
 
 
@@ -1396,5 +1444,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	st.capital_id = d["capital_id"]
 	st.ai = EnemyAI.new()
 	st.ai.from_dict(d["ai"])
+	st.story = Campaign.new()
+	st.story.from_dict(d["story"])
 	st.compute_visibility()
 	return st

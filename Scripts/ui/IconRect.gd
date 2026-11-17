@@ -41,3 +41,5 @@ func _draw() -> void:
 			Icons.carrier(self, c, -PI * 0.15, icon_scale, a)
 		"glyph":
 			Icons.ui_glyph(self, kind, c, icon_scale, Color(color, a))
+		"emblem":
+			Icons.emblem(self, kind, c, icon_scale, Color(color, a))

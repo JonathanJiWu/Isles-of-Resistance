@@ -178,6 +178,40 @@ func open_pause_menu() -> void:
 	await wait(0.4)
 
 
+func find_enabled_button(node: Node, prefix: String) -> Button:
+	if node is Button and (node as Button).text.begins_with(prefix) and (node as Button).is_visible_in_tree() and not (node as Button).disabled:
+		return node
+	for ch in node.get_children():
+		var b := find_enabled_button(ch, prefix)
+		if b != null:
+			return b
+	return null
+
+
+var directives_clicked := 0
+
+
+## Clears story UI the way a player would: Continue on comms cards, Choose on directives.
+func story() -> void:
+	for guard in 10:
+		await frames(3)
+		if game.hud.comms_visible():
+			await click(center_of(find_button(game.hud._comms, "Continue")))
+			continue
+		if modal_is("DirectivePanel"):
+			await wait(0.4)
+			var pending: String = st.story.pending
+			await click(center_of(find_enabled_button(game._modal, "Choose")))
+			await wait(0.3)
+			if pending != "" and st.story.choices.has(pending):
+				directives_clicked += 1
+			continue
+		if st.story.pending != "" and not game._animating:
+			await click(center_of(game.hud._end_btn))
+			continue
+		break
+
+
 func attach_game() -> void:
 	game = current_scene
 	st = game.state
@@ -208,6 +242,9 @@ func _menu_flow() -> void:
 	check(current_scene.has_method("end_turn"), "Deploy starts a campaign")
 	attach_game()
 	check(st.seed_value == 24680 and st.difficulty == "recruit", "campaign uses the chosen seed and difficulty")
+	check(game.hud.comms_visible() and game.hud._comms_name.text.contains("QUARANTINE"), "the campaign opens with the Act I briefing")
+	await click(center_of(find_button(game.hud._comms, "Continue")))
+	check(not game.hud.comms_visible(), "Continue dismisses the briefing")
 
 
 func _build_flow() -> void:
@@ -296,6 +333,7 @@ func _research_flow() -> void:
 
 func _turn_flow() -> void:
 	print("- turns")
+	await story()
 	var t0: int = st.turn
 	await key(KEY_SPACE)
 	await until(func(): return not game._animating and st.turn > t0, 30.0)
@@ -304,15 +342,61 @@ func _turn_flow() -> void:
 	var guard := 0
 	while st.wave < 1 and guard < 4:
 		guard += 1
+		await story()
 		var t1: int = st.turn
 		await click(center_of(game.hud._end_btn))
 		await wait(0.3)
 		if game._animating:
 			await key(KEY_SPACE)
 		await until(func(): return not game._animating and st.turn > t1, 30.0)
+	await story()
 	check(st.wave >= 1, "the END TURN button advances turns until the first wave launches")
 	check(not game._animating and game.mode == game.Mode.IDLE, "input returns to the player after the enemy phase")
 	game.hud.hide_wave_alert()
+	await _story_flow()
+
+
+func _story_flow() -> void:
+	print("- story")
+	var guard := 0
+	while directives_clicked == 0 and guard < 4 and st.result == "":
+		guard += 1
+		await story()
+		if directives_clicked > 0:
+			break
+		var t1: int = st.turn
+		Settings.skip_animations = true
+		await key(KEY_SPACE)
+		await until(func(): return not game._animating and st.turn > t1, 30.0)
+		Settings.skip_animations = false
+		game.hud.hide_wave_alert()
+	await story()
+	check(directives_clicked >= 1, "a directive is presented and answered by clicking Choose (%d)" % directives_clicked)
+	check(st.story.pending == "", "no directive left pending")
+	check(game.hud._ticker_text.length() > 40, "the broadcast ticker is running")
+	await key(KEY_I)
+	await wait(0.4)
+	check(modal_is("CodexPanel"), "I opens the Intel Archive")
+	var detail: String = game._modal._detail.text
+	var entry_btn := find_button(game._modal, "The Celestine Commonwealth")
+	if entry_btn != null:
+		await click(center_of(entry_btn))
+	check(game._modal._detail.text != detail and game._modal._detail.text.contains("Celestine"), "clicking a file shows it")
+	await key(KEY_I)
+	await wait(0.3)
+	check(game._modal == null, "I closes the Intel Archive")
+	st.rp += 40
+	game.sync_view()
+	await key(KEY_O)
+	await wait(0.4)
+	check(modal_is("CyberOpsPanel"), "O opens Cyber Ops")
+	var rp0: int = st.rp
+	await click(center_of(game._modal._rows["null_pointer"]["button"]))
+	check(st.rp == rp0 - 15, "clicking Run executes Operation Null Pointer")
+	check(game._modal._rows["null_pointer"]["button"].disabled, "the operation goes on cooldown")
+	await key(KEY_O)
+	await wait(0.3)
+	check(game._modal == null, "O closes Cyber Ops")
 
 
 func _air_flow() -> void:
@@ -330,12 +414,14 @@ func _air_flow() -> void:
 	if train != null:
 		await click(center_of(train))
 	check(st.units.size() == 1, "clicking Train Interceptor deploys a squadron")
+	await story()
 	var t0: int = st.turn
 	Settings.skip_animations = true
 	await key(KEY_SPACE)
 	await until(func(): return not game._animating and st.turn > t0, 30.0)
 	Settings.skip_animations = false
 	game.hud.hide_wave_alert()
+	await story()
 	if st.units.is_empty():
 		check(false, "squadron survived the enemy phase")
 		return
@@ -372,6 +458,7 @@ func _air_flow() -> void:
 
 func _recon_flow() -> void:
 	print("- recon")
+	await story()
 	st.supplies += 50
 	game.sync_view()
 	await click(center_of(game.hud._recon_btn))
@@ -428,10 +515,12 @@ func _continue_flow() -> void:
 	await wait(1.2)
 	attach_game()
 	check(st.turn == turn and st.structures.size() == n_struct, "Continue restores the saved campaign")
+	await story()
 
 
 func _game_over_flow() -> void:
 	print("- game over")
+	await story()
 	var cap: Dictionary = st.capital()
 	cap["hp"] = 1
 	for k in 4:

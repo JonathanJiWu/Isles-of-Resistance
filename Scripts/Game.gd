@@ -39,6 +39,7 @@ var _token := 0
 var _hints := {}
 var _last_ruins := -1
 var _result_recorded := false
+var _directive_deferred := false
 var _summary_wait := false
 
 
@@ -79,7 +80,7 @@ func _ready() -> void:
 	hud.banner("TURN %d" % state.turn, UITheme.ACCENT, 1.2)
 	Session.save_game(state)
 	Audio.music("planning")
-	_maybe_hint()
+	_present_story()
 
 
 func _build_scene() -> void:
@@ -126,6 +127,12 @@ func _connect_hud() -> void:
 	hud.research_pressed.connect(open_research)
 	hud.coverage_toggled.connect(toggle_coverage)
 	hud.menu_pressed.connect(open_pause)
+	hud.ops_pressed.connect(open_ops)
+	hud.intel_pressed.connect(open_intel)
+	hud.directive_pressed.connect(func():
+		_directive_deferred = false
+		open_directive())
+	hud.comms_dismissed.connect(_present_story)
 
 
 func _on_settings_changed() -> void:
@@ -297,6 +304,10 @@ func _on_key(k: InputEventKey) -> void:
 				cam.center_on(Hex.to_pixel(cap["pos"]))
 		KEY_TAB:
 			_cycle_unit()
+		KEY_I:
+			open_intel()
+		KEY_O:
+			open_ops()
 		KEY_F1:
 			if _modal == null or not is_instance_valid(_modal):
 				_open_modal(HowToPlayPanel.new())
@@ -397,7 +408,7 @@ func _hover_text(h: Vector2i) -> String:
 		lines.append("[color=#ff7a7a]%s[/color]  %d/%d HP%s" % [Defs.enemy_name(e["kind"]), e["hp"], e["max_hp"], tgt])
 	var c := state.carrier_at(h)
 	if not c.is_empty() and state.carrier_visible(c):
-		lines.append("[color=#ff7a7a]Enemy Carrier[/color]  %d/%d HP" % [c["hp"], c["max_hp"]])
+		lines.append("[color=#ff7a7a]%s[/color]  %d/%d HP" % [c.get("name", "Enemy Carrier"), c["hp"], c["max_hp"]])
 	match mode:
 		Mode.BUILD:
 			var err := state.build_check(build_kind, h)
@@ -680,6 +691,10 @@ func toggle_coverage() -> void:
 func end_turn() -> void:
 	if _animating or state.phase != "player" or mode == Mode.OVER:
 		return
+	if state.story.pending != "":
+		_directive_deferred = false
+		open_directive()
+		return
 	_set_mode(Mode.BUSY)
 	hud.hide_hint()
 	hud.set_tooltip("")
@@ -702,7 +717,8 @@ func end_turn() -> void:
 	hud.banner("TURN %d" % state.turn, UITheme.ACCENT, 1.0)
 	Session.save_game(state)
 	sync_view()
-	_maybe_hint()
+	_directive_deferred = false
+	_present_story()
 
 
 func _on_end_turn_button() -> void:
@@ -781,6 +797,8 @@ func play_events(events: Array) -> void:
 				await _wait(1.8 / sp)
 			"wave_cleared":
 				Audio.play("cleared")
+			"intercept":
+				hud.show_intercept(ev["speaker"], ev["text"])
 			"log":
 				hud.log_advance()
 			"recon":
@@ -1286,6 +1304,67 @@ func open_research() -> void:
 	_open_modal(p)
 
 
+# --------------------------------------------------------------------------------------------
+# Story presentation
+# --------------------------------------------------------------------------------------------
+
+## Shows queued comms cards, then the pending directive, then tutorial hints.
+func _present_story() -> void:
+	if _animating or _is_over() or (_modal != null and is_instance_valid(_modal)) or hud.comms_visible():
+		return
+	if not state.story.beats.is_empty():
+		hud.show_comms(state.story.beats.pop_front())
+		return
+	if state.story.pending != "" and not _directive_deferred:
+		open_directive()
+		return
+	_maybe_hint()
+
+
+func open_directive() -> void:
+	if state.story.pending == "" or _is_over() or _animating or _modal is DirectivePanel:
+		return
+	var p := DirectivePanel.new(state)
+	var decided := [false]
+	p.chosen.connect(func(idx):
+		if state.choose_directive(idx):
+			decided[0] = true
+			Session.save_game(state)
+			sync_view()
+			hud.show_selection(selected))
+	p.closed.connect(func():
+		if not decided[0]:
+			_directive_deferred = true
+		_present_story.call_deferred())
+	_open_modal(p)
+
+
+func open_ops() -> void:
+	if _is_over() or _animating:
+		return
+	if _modal is CyberOpsPanel:
+		_modal.close()
+		return
+	var p := CyberOpsPanel.new(state)
+	p.run.connect(func(op):
+		if state.run_op(op):
+			Audio.play("laser", -6.0)
+			hud.toast(Lore.OPS[op]["name"] + " executed")
+			sync_view()
+		else:
+			Audio.play("error"))
+	_open_modal(p)
+
+
+func open_intel() -> void:
+	if _modal is CodexPanel:
+		_modal.close()
+		return
+	state.story.codex_unseen = 0
+	_open_modal(CodexPanel.new(state.story.unlocked_entries(), Lore.CODEX.size()))
+	hud.refresh()
+
+
 func open_pause() -> void:
 	if _modal != null and is_instance_valid(_modal):
 		return
@@ -1365,7 +1444,7 @@ func _maybe_hint() -> void:
 		text = "[b]Welcome, Commander.[/b] Pick a structure in [color=#4fd1c5]CONSTRUCT[/color] (or press 1-0) and click a hex to build. [b]Flak[/b] guards against low flyers, [b]Research Labs[/b] speed up research. Hover anything for details, then press [b]SPACE[/b] to end your turn."
 	elif state.turn == 2:
 		key = "research"
-		text = "You have research points. Press [b]R[/b] to open the tree. [b]Guided Missiles[/b] unlocks SAM Sites, the answer to high-altitude bombers that flak can barely touch."
+		text = "You have research points. Press [b]R[/b] to open the tree. [b]Guided Missiles[/b] unlocks Longbow SAM Sites, the answer to the Monsoon bombers that flak can barely touch."
 	elif spotted and state.wave >= 1:
 		key = "intent"
 		text = "[color=#ff7a7a]Enemy aircraft spotted![/color] Dashed red lines show their [b]intended targets[/b]. Your defenses fire automatically during the enemy phase. Press [b]V[/b] to see your coverage."

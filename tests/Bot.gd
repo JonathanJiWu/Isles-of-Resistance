@@ -26,6 +26,8 @@ func _init(seed_value: int = 1, p_skill: float = 1.0, p_strategy: String = "defe
 
 
 func play_turn(st: GameState) -> void:
+	if st.story.pending != "":
+		_decide(st)
 	if skill <= 0.0:
 		return
 	_research(st)
@@ -198,3 +200,16 @@ func _produce(st: GameState) -> void:
 			st.produce(s["id"], "interceptor")
 		elif s["kind"] == "harbor" and st.produce_check(s["id"], "frigate") == "" and st.supplies > 120:
 			st.produce(s["id"], "frigate")
+
+
+func _decide(st: GameState) -> void:
+	var opts: Array = st.story.pending_data()["options"]
+	var order: Array = range(opts.size())
+	for i in range(order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t = order[i]
+		order[i] = order[j]
+		order[j] = t
+	for i in order:
+		if st.choose_directive(i):
+			return

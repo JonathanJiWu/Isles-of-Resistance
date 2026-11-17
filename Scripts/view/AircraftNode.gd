@@ -112,7 +112,28 @@ func _draw() -> void:
 	if kind == "stealth":
 		draw_circle(bob, 15.0, Color(Defs.ENEMY_COLOR, 0.08 + 0.05 * sin(_t * 3.0)))
 	Icons.aircraft(self, kind, bob, heading, s, _t, true)
+	_draw_nav_lights(bob)
 	if hovered:
 		draw_arc(Vector2.ZERO, 17.0, 0, TAU, 24, Color(Defs.ENEMY_COLOR, 0.9), 1.5, true)
 	if hp < max_hp and not _dying:
 		EntityNodes.hp_bar(self, Vector2(0, -18), 24.0, float(hp) / max_hp, Defs.ENEMY_COLOR.lerp(Color.WHITE, 0.2))
+
+
+const _WINGSPAN := {"bomber": 15.0, "fighter": 9.0, "drone": 8.0, "stealth": 14.0, "gunship": 0.0, "missile": 0.0}
+
+
+func _draw_nav_lights(bob: Vector2) -> void:
+	var span: float = _WINGSPAN.get(kind, 0.0)
+	if span <= 0.0 or _dying:
+		return
+	var blink := 0.6 + 0.4 * sin(_t * 4.0 + id)
+	var left := bob + Vector2(-4.0, -span).rotated(heading)
+	var right := bob + Vector2(-4.0, span).rotated(heading)
+	if kind != "stealth":
+		draw_circle(left, 3.2, Color(1.0, 0.15, 0.2, 0.18 * blink))
+		draw_circle(left, 1.4, Color(1.0, 0.3, 0.3, blink))
+		draw_circle(right, 3.2, Color(0.2, 1.0, 0.4, 0.18 * blink))
+		draw_circle(right, 1.4, Color(0.4, 1.0, 0.5, blink))
+	if fmod(_t + id * 0.37, 1.3) < 0.07:
+		draw_circle(bob, 5.0, Color(1, 1, 1, 0.35))
+		draw_circle(bob, 2.0, Color(1, 1, 1, 0.9))

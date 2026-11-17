@@ -18,6 +18,8 @@ func _init() -> void:
 	test_determinism()
 	test_events_wellformed()
 	test_adaptive_ai()
+	test_lore_integrity()
+	test_campaign_story()
 	test_full_campaigns()
 	if OS.get_cmdline_user_args().has("--balance"):
 		balance_report()
@@ -239,7 +241,7 @@ func test_events_wellformed() -> void:
 	var st := GameState.create(31337, "commander")
 	var bot := TestBot.new(3)
 	var known_types := ["phase", "beat_start", "beat_end", "move", "spawn", "volley_start", "volley_end", "shot",
-		"attack", "damage", "destroyed", "exit", "log", "wave", "wave_cleared", "turn", "game_over", "strike", "recon"]
+		"attack", "damage", "destroyed", "exit", "log", "wave", "wave_cleared", "turn", "game_over", "strike", "recon", "intercept"]
 	var depth_ok := true
 	var types_ok := true
 	for i in 30:
@@ -343,6 +345,155 @@ func test_adaptive_ai() -> void:
 				hits += 1
 			st2.enemies.erase(b["id"])
 		check(hits >= 5, "with the Capital already targeted, bombers divert to the decoy (%d/20)" % hits)
+
+
+func test_lore_integrity() -> void:
+	section("lore integrity")
+	var valid_effects := ["ally", "resolve", "supplies", "rp", "budget", "leak_known", "reveal_next", "glass",
+		"foundry_mult", "accuracy", "strike_lock", "no_new_types", "convoy", "convoy_set", "free_tech", "flags", "gamble"]
+	for id in Lore.DIRECTIVE_ORDER:
+		check(Lore.DIRECTIVES.has(id), "directive %s defined" % id)
+		var d: Dictionary = Lore.DIRECTIVES[id]
+		check(Lore.PEOPLE.has(d["speaker"]), "directive %s speaker exists" % id)
+		var opts: Array = d["options"]
+		check(opts.size() >= 2, "directive %s offers a choice" % id)
+		var free_option := false
+		for i in opts.size():
+			var e: Dictionary = opts[i]["effects"]
+			var all_e: Array = [e]
+			if e.has("gamble"):
+				all_e.append(e["gamble"]["success"])
+				all_e.append(e["gamble"]["fail"])
+			for ee in all_e:
+				for k in ee:
+					check(valid_effects.has(k), "directive %s option %d effect key %s is valid" % [id, i, k])
+			if e.get("supplies", 0) >= 0 and e.get("rp", 0) >= 0:
+				free_option = true
+			check(Lore.DECISION_NEWS.has("%s:%d" % [id, i]), "news reaction for %s:%d" % [id, i])
+		check(free_option, "directive %s always has an affordable option" % id)
+	for a in Lore.ACTS:
+		check(Lore.PEOPLE.has(a["speaker"]), "act speaker exists")
+	for b in Lore.BEATS.values():
+		check(Lore.PEOPLE.has(b["speaker"]), "beat speaker exists")
+	for outlet in Lore.NEWS:
+		check(Lore.NEWS[outlet].has("quiet") and Lore.NEWS[outlet].has("tag"), "outlet %s has a quiet pool" % outlet)
+	var ids := {}
+	for entry in Lore.CODEX:
+		check(not ids.has(entry["id"]), "codex id %s unique" % entry["id"])
+		ids[entry["id"]] = true
+		var tag: String = entry["unlock"]
+		var ok: bool = tag in ["start", "act0", "act1", "act2", "act3", "carrier_seen", "city_lost"] or tag.begins_with("flag:") or tag.begins_with("kill:") or tag.begins_with("tech:")
+		check(ok, "codex %s unlock tag %s is valid" % [entry["id"], tag])
+	for key in Lore.ENDINGS:
+		check(Lore.OUTLET_ENDINGS.has(key) and Lore.OUTLET_ENDINGS[key].size() == 3, "ending %s has three outlet takes" % key)
+		for who in Lore.CODAS:
+			check(Lore.CODAS[who].has(key), "coda %s for ending %s" % [who, key])
+
+
+func test_campaign_story() -> void:
+	section("campaign & story")
+	for diff in Defs.DIFFICULTY_ORDER:
+		var st0 := GameState.create(321, diff)
+		var sched: Array = st0.story.schedule
+		check(sched.size() == Lore.DIRECTIVE_ORDER.size(), "%s: every directive is scheduled" % diff)
+		var prev := 0
+		var ok := true
+		for s in sched:
+			if int(s[1]) < prev or int(s[1]) < 1 or int(s[1]) > st0.waves_total - 1:
+				ok = false
+			prev = int(s[1])
+		check(ok, "%s: directive triggers are ordered and before the final wave" % diff)
+	var st := GameState.create(321, "veteran")
+	var f: Dictionary = st.structures.get(st.story.foundry_id, {})
+	check(not f.is_empty() and f.get("foundry", false) and f["name"] == Lore.FOUNDRY_CITY, "Silica Point is the Foundry city")
+	check(st.capital()["name"] == "Lumen", "the Capital is Lumen")
+	check(st.story.act == 0 and not st.story.beats.is_empty(), "Act I opens with a briefing")
+	check(st.story.news.size() >= 4, "opening broadcasts generated")
+	check(st.story.codex.size() >= 8, "starting intel files unlocked")
+	var base_income := st.income()
+	st.story.resolve = 90
+	check(st.income() > base_income, "high Resolve raises income")
+	st.story.resolve = 10
+	check(st.income() < base_income, "collapsing Resolve cuts income")
+	st.story.resolve = 60
+	# Glass Shield: the Foundry is spared until it cracks.
+	var b := st._add_enemy("bomber", f["pos"] + Hex.DIRS[0] * 2, "East")
+	var picks_intact := 0
+	var crowd := {st.capital_id: 3}
+	for i in 20:
+		if st.ai._pick_value_target(st, b, crowd, 1.0).get("id", -1) == f["id"]:
+			picks_intact += 1
+	st.story.pending = "glass_shield"
+	var sup := st.supplies
+	check(st.choose_directive(0), "choosing a directive option succeeds")
+	check(st.story.glass == "cracked" and st.has_tech("guided_missiles") and st.supplies == sup + 80, "Line 7 deal cracks the shield, grants SAMs and supplies")
+	check(st.story.pending == "" and st.story.choices["glass_shield"] == 0, "directive recorded")
+	var picks_cracked := 0
+	for i in 20:
+		if st.ai._pick_value_target(st, b, crowd, 1.0).get("id", -1) == f["id"]:
+			picks_cracked += 1
+	check(picks_intact == 0 and picks_cracked > 10, "bombers spare Silica Point until the shield cracks (%d -> %d of 20)" % [picks_intact, picks_cracked])
+	st.enemies.erase(b["id"])
+	# Budget modifiers and truces.
+	st.story.pending = "palisade"
+	st.choose_directive(0)
+	check(absf(st.story.budget_mult() - 1.15) < 0.001, "show of force strengthens the next waves")
+	st.story.pending = "back_channel"
+	st.choose_directive(0)
+	var ab := {}
+	for h in st.explored:
+		if st.build_check("airbase", h) == "":
+			ab = st.build("airbase", h)
+			break
+	if not ab.is_empty():
+		check(st.strike_check(ab["id"]).begins_with("Back-channel truce"), "back-channel truce blocks carrier strikes")
+	check(not st.story.allow_new_types(), "back-channel deal pauses Needles and Inkwash")
+	# Cyber operations.
+	st.rp = 200
+	for s in st.structures.values():
+		st.ai.reveal(s["id"])
+	var known_before: int = st.ai.known.size()
+	check(st.run_op("null_pointer") and st.ai.known.size() < known_before, "Null Pointer makes the enemy forget sites")
+	check(not st.run_op("null_pointer"), "operations have cooldowns")
+	var nwt: int = st.next_wave_turn
+	st.story.act = 1
+	check(st.run_op("rollback") and st.next_wave_turn == nwt + 1, "Rollback delays the next wave")
+	check(st.run_op("merge_conflict") and st.story.reveal_next > 0, "Merge Conflict reveals the next wave")
+	check(st.run_op("rubber_duck"), "Rubber Duck runs")
+	# Play on to see waves, intercepts and broadcasts flow, then check every ending renders.
+	var bot := TestBot.new(11)
+	var intercepts := 0
+	var decided := 0
+	while st.result == "" and st.turn < 60:
+		var had := st.story.pending != ""
+		bot.play_turn(st)
+		if had and st.story.pending == "":
+			decided += 1
+		for ev in st.end_turn():
+			if ev["type"] == "intercept":
+				intercepts += 1
+	check(intercepts > 5, "enemy chatter is intercepted during the campaign (%d)" % intercepts)
+	check(decided >= 4, "the campaign presents directives (%d answered)" % decided)
+	check(st.story.act >= 2, "the story reaches Act III (act %d)" % st.story.act)
+	var end := st.story.ending(st)
+	check(end["title"] != "" and end["outlets"].size() == 3 and end["codas"].size() == 3, "epilogue renders (%s)" % end["title"])
+	for key in Lore.ENDINGS:
+		var st2 := GameState.create(5, "recruit")
+		match key:
+			"defeat":
+				st2.result = "defeat"
+			"fleet":
+				st2.result = "victory"
+				st2.carriers.clear()
+			"talks":
+				st2.result = "victory"
+				st2.story.flags["posture_talks"] = true
+			"independence":
+				st2.result = "victory"
+				st2.story.flags["posture_independence"] = true
+			_:
+				st2.result = "victory"
+		check(st2.story.ending(st2)["key"] == key, "ending %s reachable" % key)
 
 
 func test_full_campaigns() -> void:

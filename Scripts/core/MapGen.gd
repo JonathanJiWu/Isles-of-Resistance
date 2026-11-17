@@ -3,12 +3,8 @@ extends RefCounted
 ## Procedural archipelago generator. The player's islands lie in the west; the east is open
 ## ocean where the enemy carrier fleet patrols.
 
-const CAPITAL_NAMES := ["Fort Meridian", "Port Resolute", "Haven Prime", "New Bastion", "Citadel Bay", "Aurora Point"]
-const CITY_NAMES := [
-	"Brightwater", "Saltmere", "Kestrel Bay", "Thornholt", "Marrow Point", "Gullhaven", "Ashcombe",
-	"Windrest", "Corran", "Lowtide", "Emberly", "Sable Cove", "Pinecrest", "Driftwood", "Harrowgate",
-	"Seastone", "Fairhollow", "Orrin's Reach",
-]
+const CAPITAL_NAMES := Lore.CAPITAL_NAMES
+const CITY_NAMES := Lore.CITY_NAMES
 const LAND_THRESHOLD := 0.11
 
 

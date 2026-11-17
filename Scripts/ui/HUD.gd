@@ -11,6 +11,10 @@ signal action_pressed(action: String, id: int)
 signal research_pressed
 signal coverage_toggled
 signal menu_pressed
+signal ops_pressed
+signal intel_pressed
+signal directive_pressed
+signal comms_dismissed
 
 const LEFT_W := 252.0
 const RIGHT_W := 316.0
@@ -42,6 +46,19 @@ var _active_build := ""
 var _wave_tween: Tween
 var _banner_tween: Tween
 var _toast_tween: Tween
+var _ticker_clip: Control
+var _ticker_label: Label
+var _ticker_text := ""
+var _ops_btn: Button
+var _intel_btn: Button
+var _comms: PanelContainer
+var _comms_icon_slot: Control
+var _comms_name: Label
+var _comms_title: Label
+var _comms_text: RichTextLabel
+var _intercept: PanelContainer
+var _intercept_label: RichTextLabel
+var _intercept_tween: Tween
 
 
 func _init() -> void:
@@ -52,6 +69,7 @@ func _init() -> void:
 func build(p_state: GameState) -> void:
 	st = p_state
 	_build_top_bar()
+	_build_ticker()
 	_build_left_panel()
 	_build_right_panel()
 	_build_log()
@@ -79,14 +97,14 @@ func _build_top_bar() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bar)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 22)
+	row.add_theme_constant_override("separation", 16)
 	bar.add_child(row)
-	var title := UITheme.label("ISLES OF RESISTANCE", 19, UITheme.ACCENT, UITheme.font_bold)
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(title)
-	var diff := UITheme.label(Defs.DIFFICULTY[st.difficulty]["name"].to_upper(), 12, UITheme.TEXT_DIM, UITheme.font_semibold)
-	diff.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(diff)
+	var tb := VBoxContainer.new()
+	tb.add_theme_constant_override("separation", -5)
+	tb.alignment = BoxContainer.ALIGNMENT_CENTER
+	tb.add_child(UITheme.label("ISLES OF RESISTANCE", 18, UITheme.ACCENT, UITheme.font_bold))
+	tb.add_child(UITheme.label("TESSERA AIR DEFENSE COMMAND · %s" % Defs.DIFFICULTY[st.difficulty]["name"].to_upper(), 10, UITheme.TEXT_DIM, UITheme.font_semibold))
+	row.add_child(tb)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(sp)
@@ -94,6 +112,8 @@ func _build_top_bar() -> void:
 			["research", Color(0.6, 0.75, 1.0), "Research points: spend them in the Research tree [R]. Produced by your Capital and Research Labs."],
 			["turn", UITheme.TEXT, "Current turn."],
 			["wave", Defs.ENEMY_COLOR, "Enemy waves launched so far, and when the next one launches."],
+			["resolve", Defs.GOLD, "Public Resolve: Tessera's will to keep going. Defiant (75+) adds 10% income; Shaken (below 40) and Breaking (below 20) cut it. Losing cities hurts it; repelling waves, sinking carriers and some directives raise it."],
+			["ally", Color(0.55, 0.68, 1.0), "Hesperian Commitment: how much the Federation is willing to help. At 55+ every repelled wave brings an arms shipment, bigger the higher it goes."],
 			["score", Defs.GOLD, "Score: aircraft downed, waves repelled, carriers sunk, and a victory bonus."]]:
 		var chip := HBoxContainer.new()
 		chip.add_theme_constant_override("separation", 6)
@@ -114,24 +134,52 @@ func _build_top_bar() -> void:
 	var sp2 := Control.new()
 	sp2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(sp2)
-	var rb := UITheme.button("Research  [R]", 0, 36)
+	var rb := UITheme.button("Research [R]", 0, 36)
 	rb.pressed.connect(func(): Audio.play("click"); research_pressed.emit())
 	row.add_child(rb)
-	_cov_btn = UITheme.button("Coverage  [V]", 0, 36)
+	_cov_btn = UITheme.button("Coverage [V]", 0, 36)
 	_cov_btn.toggle_mode = true
 	_cov_btn.tooltip_text = "Show the combined reach of your air defenses."
 	_cov_btn.pressed.connect(func(): Audio.play("click"); coverage_toggled.emit())
 	row.add_child(_cov_btn)
-	var mb := UITheme.button("Menu  [Esc]", 0, 36)
+	var mb := UITheme.button("Menu [Esc]", 0, 36)
 	mb.pressed.connect(func(): Audio.play("click"); menu_pressed.emit())
 	row.add_child(mb)
 	for b in [rb, _cov_btn, mb]:
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 
+func _build_ticker() -> void:
+	var strip := PanelContainer.new()
+	strip.add_theme_stylebox_override("panel", UITheme.box(Color(0.02, 0.03, 0.06, 0.92), Color(1.0, 0.45, 0.75, 0.35), 0, 0, Vector4(0, 2, 0, 2)))
+	strip.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	strip.offset_top = 52
+	strip.offset_bottom = 76
+	strip.mouse_filter = Control.MOUSE_FILTER_STOP
+	strip.tooltip_text = "Broadcasts: CCB (Commonwealth state media), HNN (Hesperian), LPB (Lumen Public Broadcasting), Strait Talk (pirate radio) and advertisers. Each tells the same war differently."
+	add_child(strip)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 0)
+	strip.add_child(hb)
+	var tag := PanelContainer.new()
+	tag.add_theme_stylebox_override("panel", UITheme.box(Color(1.0, 0.3, 0.6, 0.9), Color(0, 0, 0, 0), 0, 0, Vector4(10, 0, 10, 0)))
+	var tl := UITheme.label("LIVE", 12, Color.WHITE, UITheme.font_bold)
+	tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tag.add_child(tl)
+	hb.add_child(tag)
+	_ticker_clip = Control.new()
+	_ticker_clip.clip_contents = true
+	_ticker_clip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ticker_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(_ticker_clip)
+	_ticker_label = UITheme.label("", 13, Color(0.95, 0.85, 0.95), UITheme.font_semibold)
+	_ticker_label.position = Vector2(1600, 1)
+	_ticker_clip.add_child(_ticker_label)
+
+
 func _build_left_panel() -> void:
 	var p := _panel()
-	p.position = Vector2(10, 62)
+	p.position = Vector2(10, 84)
 	p.custom_minimum_size = Vector2(LEFT_W, 0)
 	add_child(p)
 	var vb := VBoxContainer.new()
@@ -150,11 +198,19 @@ func _build_left_panel() -> void:
 	_recon_btn.tooltip_text = "Fly a reconnaissance sortie: reveal a radius-%d area within %d hexes of your Capital or an Airbase until your next turn. Use it to find enemy carriers. Once per turn." % [Defs.RECON_RADIUS, Defs.RECON_RANGE]
 	_recon_btn.pressed.connect(func(): Audio.play("click"); recon_selected.emit())
 	vb.add_child(_recon_btn)
+	_ops_btn = _make_row_button("cyber", "glyph", "Cyber Ops  [O]", "")
+	_ops_btn.tooltip_text = "Spend research points on hacking operations against the Commonwealth's networks."
+	_ops_btn.pressed.connect(func(): Audio.play("click"); ops_pressed.emit())
+	vb.add_child(_ops_btn)
+	_intel_btn = _make_row_button("intel", "glyph", "Intel Archive  [I]", "")
+	_intel_btn.tooltip_text = "Dossiers, documents, intercepts and contradictory accounts collected during the war."
+	_intel_btn.pressed.connect(func(): Audio.play("click"); intel_pressed.emit())
+	vb.add_child(_intel_btn)
 
 
 func _make_row_button(kind: String, mode: String, text: String, cost: String) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(LEFT_W - 24, 42)
+	b.custom_minimum_size = Vector2(LEFT_W - 24, 38)
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var hb := HBoxContainer.new()
@@ -164,7 +220,7 @@ func _make_row_button(kind: String, mode: String, text: String, cost: String) ->
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hb.add_theme_constant_override("separation", 8)
 	b.add_child(hb)
-	var icon := IconRect.new(kind, mode, 38, 0.95)
+	var icon := IconRect.new(kind, mode, 34, 0.9)
 	if mode == "glyph":
 		icon.icon_scale = 1.3
 	hb.add_child(icon)
@@ -199,7 +255,7 @@ func _build_right_panel() -> void:
 	p.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	p.offset_left = -RIGHT_W - 10
 	p.offset_right = -10
-	p.offset_top = 62
+	p.offset_top = 84
 	p.offset_bottom = 640
 	add_child(p)
 	_info_scroll = ScrollContainer.new()
@@ -265,6 +321,8 @@ func _build_end_turn() -> void:
 		Audio.play("click")
 		if _busy:
 			skip_pressed.emit()
+		elif st.story.pending != "" and st.result == "":
+			directive_pressed.emit()
 		else:
 			end_turn_pressed.emit())
 	box.add_child(_end_btn)
@@ -278,7 +336,7 @@ func _build_overlays() -> void:
 	_banner.add_theme_stylebox_override("panel", UITheme.box(Color(0.03, 0.06, 0.1, 0.9), UITheme.ACCENT, 1, 6, Vector4(28, 8, 28, 8)))
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_banner.offset_top = 70
+	_banner.offset_top = 92
 	_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_banner.modulate.a = 0.0
 	_banner_label = UITheme.label("", 26, UITheme.ACCENT, UITheme.font_bold)
@@ -289,7 +347,7 @@ func _build_overlays() -> void:
 	_hint = PanelContainer.new()
 	_hint.add_theme_stylebox_override("panel", UITheme.box(Color(0.05, 0.12, 0.16, 0.95), UITheme.ACCENT, 1, 7, Vector4(14, 10, 14, 10)))
 	_hint.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_hint.offset_top = 124
+	_hint.offset_top = 150
 	_hint.custom_minimum_size = Vector2(560, 0)
 	_hint.offset_left = -280
 	_hint.offset_right = 280
@@ -310,6 +368,66 @@ func _build_overlays() -> void:
 	close.pressed.connect(func(): Audio.play("click"); hide_hint())
 	hb.add_child(close)
 	add_child(_hint)
+
+	_comms = PanelContainer.new()
+	_comms.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_comms.offset_top = 150
+	_comms.custom_minimum_size = Vector2(640, 0)
+	_comms.offset_left = -320
+	_comms.offset_right = 320
+	_comms.visible = false
+	var cv := VBoxContainer.new()
+	cv.add_theme_constant_override("separation", 6)
+	_comms.add_child(cv)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	_comms_icon_slot = Control.new()
+	_comms_icon_slot.custom_minimum_size = Vector2(40, 40)
+	head.add_child(_comms_icon_slot)
+	var names := VBoxContainer.new()
+	names.add_theme_constant_override("separation", -3)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_comms_name = UITheme.label("", 16, UITheme.TEXT, UITheme.font_bold)
+	_comms_title = UITheme.label("", 12, UITheme.TEXT_DIM)
+	names.add_child(_comms_name)
+	names.add_child(_comms_title)
+	head.add_child(names)
+	var cont := UITheme.button("Continue  ▸", 0, 32)
+	cont.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cont.pressed.connect(func():
+		Audio.play("click")
+		_comms.visible = false
+		comms_dismissed.emit())
+	head.add_child(cont)
+	cv.add_child(head)
+	_comms_text = RichTextLabel.new()
+	_comms_text.bbcode_enabled = true
+	_comms_text.fit_content = true
+	_comms_text.add_theme_font_size_override("normal_font_size", 15)
+	_comms_text.add_theme_font_size_override("bold_font_size", 15)
+	_comms_text.add_theme_font_size_override("italics_font_size", 15)
+	cv.add_child(_comms_text)
+	add_child(_comms)
+
+	_intercept = PanelContainer.new()
+	_intercept.add_theme_stylebox_override("panel", UITheme.box(Color(0.09, 0.02, 0.07, 0.92), Color(1.0, 0.45, 0.75, 0.8), 1, 5, Vector4(14, 7, 14, 7)))
+	_intercept.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_intercept.custom_minimum_size = Vector2(600, 0)
+	_intercept.offset_left = -300
+	_intercept.offset_right = 300
+	_intercept.offset_top = -96
+	_intercept.offset_bottom = -24
+	_intercept.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_intercept.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_intercept.modulate.a = 0.0
+	_intercept_label = RichTextLabel.new()
+	_intercept_label.bbcode_enabled = true
+	_intercept_label.fit_content = true
+	_intercept_label.add_theme_font_size_override("normal_font_size", 14)
+	_intercept_label.add_theme_font_size_override("bold_font_size", 13)
+	_intercept_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_intercept.add_child(_intercept_label)
+	add_child(_intercept)
 
 	_wave_panel = PanelContainer.new()
 	_wave_panel.add_theme_stylebox_override("panel", UITheme.box(Color(0.1, 0.03, 0.05, 0.95), Defs.ENEMY_COLOR, 2, 8, Vector4(26, 16, 26, 18)))
@@ -376,6 +494,12 @@ func refresh() -> void:
 	else:
 		_chips["wave"][1].text = "next launches end of turn %d" % st.next_wave_turn
 		_chips["wave"][1].add_theme_color_override("font_color", Defs.WARN if cd == 1 else UITheme.TEXT_DIM)
+	_chips["resolve"][0].text = str(st.story.resolve)
+	_chips["resolve"][1].text = "%s · income x%.2f" % [st.story.resolve_label(), st.story.resolve_mult()]
+	_chips["resolve"][1].add_theme_color_override("font_color", Defs.BAD if st.story.resolve < 40 else UITheme.TEXT_DIM)
+	_chips["ally"][0].text = str(st.story.ally)
+	var ship := st.story.shipment_size()
+	_chips["ally"][1].text = ("shipments +%d / wave" % ship) if ship > 0 else "no shipments"
 	_chips["score"][0].text = str(st.score)
 	_chips["score"][1].text = "%d carrier%s afloat" % [st.carriers.size(), "" if st.carriers.size() == 1 else "s"]
 	for kind in _build_buttons:
@@ -398,6 +522,19 @@ func refresh() -> void:
 		b.set_pressed_no_signal(_active_build == kind)
 		b.tooltip_text = _structure_tooltip(kind, locked)
 	_recon_btn.disabled = _busy or st.result != "" or st.recon_used_turn == st.turn or st.supplies < Defs.RECON_COST
+	_ops_btn.disabled = _busy or st.result != ""
+	var ready_ops := 0
+	for op in Lore.OPS:
+		if st.story.op_check(st, op) == "":
+			ready_ops += 1
+	var ops_cost: Label = _ops_btn.get_meta("cost")
+	ops_cost.text = "%d ready" % ready_ops if ready_ops > 0 else ""
+	ops_cost.add_theme_font_size_override("font_size", 11)
+	var intel_cost: Label = _intel_btn.get_meta("cost")
+	intel_cost.text = "%d new" % st.story.codex_unseen if st.story.codex_unseen > 0 else ""
+	intel_cost.add_theme_font_size_override("font_size", 11)
+	intel_cost.add_theme_color_override("font_color", Color(1.0, 0.55, 0.78))
+	_set_ticker(st.story.news)
 	_refresh_end_button()
 	_refresh_intel()
 	if _log_hold == 0:
@@ -421,6 +558,11 @@ func _refresh_end_button() -> void:
 		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.3, 0.08, 0.1, 0.97), Defs.ENEMY_COLOR, 2, 7))
 		_end_btn.add_theme_stylebox_override("hover", UITheme.box(Color(0.4, 0.1, 0.13, 1.0), Color.WHITE, 2, 7))
 		_end_sub.text = "Enemy phase in progress  ·  SPACE to skip animations"
+	elif st.story.pending != "" and st.result == "":
+		_end_btn.text = "DIRECTIVE  ▸"
+		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.3, 0.22, 0.06, 0.97), Defs.GOLD, 2, 7))
+		_end_btn.add_theme_stylebox_override("hover", UITheme.box(Color(0.4, 0.3, 0.08, 1.0), Color.WHITE, 2, 7))
+		_end_sub.text = "A decision awaits before you can end the turn"
 	elif st.result != "":
 		_end_btn.text = "VICTORY  ·  SUMMARY" if st.result == "victory" else "DEFEAT  ·  SUMMARY"
 		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.1, 0.36, 0.38, 0.97), UITheme.ACCENT, 2, 7))
@@ -525,7 +667,10 @@ func _info_title(text: String, sub: String = "", icon: IconRect = null) -> void:
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vb.add_child(t)
 	if sub != "":
-		vb.add_child(UITheme.label(sub, 12, UITheme.TEXT_DIM))
+		var sl := UITheme.label(sub, 12, UITheme.TEXT_DIM)
+		sl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		sl.custom_minimum_size = Vector2(200, 0)
+		vb.add_child(sl)
 	hb.add_child(vb)
 	_info_box.add_child(hb)
 
@@ -590,7 +735,7 @@ func show_selection(h: Vector2i) -> void:
 		return
 	if h == Hex.INVALID or not st.tiles.has(h):
 		_info_title("No selection", "Click a hex for details")
-		_info_text("[color=#9fb0c2]Choose a structure in the [b]CONSTRUCT[/b] panel and click a hex to build it. Select your units and facilities to give orders.\n\n[b]Controls[/b]\nLeft click: select / build / order\nShift+click: keep building\nRight click or Esc: cancel\nWASD / arrows / right-drag: pan\nMouse wheel or Q/E: zoom\n1-0: quick build, R: research\nV: coverage, Tab: next unit\nSpace: end turn / skip[/color]")
+		_info_text("[color=#9fb0c2]Choose a structure in the [b]CONSTRUCT[/b] panel and click a hex to build it. Select your units and facilities to give orders.\n\n[b]Controls[/b]\nLeft click: select / build / order\nShift+click: keep building\nRight click or Esc: cancel\nWASD / arrows / right-drag: pan\nMouse wheel or Q/E: zoom\n1-0: quick build, R: research\nV: coverage, Tab: next unit\nI: Intel Archive, O: Cyber Ops\nSpace: end turn / skip[/color]")
 		return
 	if not st.explored.has(h):
 		_info_title("Uncharted waters", "Unexplored")
@@ -634,6 +779,8 @@ func _show_structure(s: Dictionary) -> void:
 	if s["kind"] == "capital" or s["kind"] == "city":
 		title = s["name"]
 		sub = def["name"]
+		if s.get("foundry", false):
+			sub = "Foundry City · TLW Fab 18"
 	elif s["kind"] == "decoy":
 		sub = "Enemy believes this is a Research Lab"
 	var known: bool = st.ai.known.has(s["id"])
@@ -648,13 +795,22 @@ func _show_structure(s: Dictionary) -> void:
 		rows.append(["Accuracy", "%d%%" % int(def["acc"] * 100)])
 	rows.append(["Vision", st.s_vision(s)])
 	if def.has("income"):
-		rows.append(["Supplies", "+%d / turn" % def["income"]])
-	if def.has("rp"):
-		rows.append(["Research", "+%d / turn" % def["rp"]])
+		var extra := st.story.foundry_income(st) if s.get("foundry", false) else 0
+		rows.append(["Supplies", "+%d / turn" % (int(def["income"]) + extra)])
+	if def.has("rp") or s.get("foundry", false):
+		var extra_rp := st.story.foundry_rp(st) if s.get("foundry", false) else 0
+		rows.append(["Research", "+%d / turn" % (int(def.get("rp", 0)) + extra_rp)])
+	if s.get("foundry", false):
+		rows.append(["Glass Shield", "INTACT" if st.story.glass == "intact" else "CRACKED"])
 	if s["kills"] > 0:
 		rows.append(["Aircraft downed", s["kills"]])
 	_info_stats(rows)
 	_info_text("[color=#9fb0c2]%s[/color]" % def["desc"], 12)
+	if s.get("foundry", false):
+		if st.story.glass == "intact":
+			_info_text("[color=#ffd166]The Glass Shield holds: Commonwealth planners keep Silica Point off their target lists, because they need Fab 18 too.[/color]", 12)
+		else:
+			_info_text("[color=#ff6b6b]The Glass Shield has cracked. Silica Point is now a prime target. Defend it.[/color]", 12)
 	var targeted_by: Array = []
 	for e in st.enemies.values():
 		if st.enemy_detected(e) and e["target"].get("type", "") == "structure" and e["target"].get("id", -1) == s["id"]:
@@ -670,7 +826,7 @@ func _show_structure(s: Dictionary) -> void:
 			_info_action("Air Strike on Carrier  (%d)" % Defs.AIR_STRIKE_COST, st.strike_check(s["id"]), "strike", s["id"], "Launch a strike package at a spotted carrier within %d hexes." % Defs.AIR_STRIKE_RANGE)
 		"harbor":
 			var n2 := st.units_from(s["id"])
-			_info_action("Commission AA Frigate  (%d)  [%d/2]" % [Defs.UNITS["frigate"]["cost"], n2], st.produce_check(s["id"], "frigate"), "frigate", s["id"], Defs.UNITS["frigate"]["desc"])
+			_info_action("Commission Corvette  (%d)  [%d/2]" % [Defs.UNITS["frigate"]["cost"], n2], st.produce_check(s["id"], "frigate"), "frigate", s["id"], Defs.UNITS["frigate"]["desc"])
 		"missile":
 			_info_action("Launch Cruise Missile  (%d)" % Defs.MISSILE_COST, st.strike_check(s["id"]), "strike", s["id"], "Fire at a spotted carrier within %d hexes." % Defs.MISSILE_RANGE)
 	if def.get("build", false):
@@ -732,7 +888,7 @@ func _show_enemy(e: Dictionary) -> void:
 
 
 func _show_carrier(c: Dictionary) -> void:
-	_info_title(Defs.CARRIER["name"], "Enemy capital ship", IconRect.new("carrier", "carrier", 52, 1.0))
+	_info_title(c.get("name", Defs.CARRIER["name"]), Defs.CARRIER["name"], IconRect.new("carrier", "carrier", 52, 1.0))
 	_info_hp(c["hp"], c["max_hp"], Defs.ENEMY_COLOR)
 	_info_text("[color=#9fb0c2]%s Repairs 3 HP per turn.[/color]" % Defs.CARRIER["desc"], 12)
 
@@ -772,6 +928,10 @@ func toast(text: String) -> void:
 func wave_alert(r: Dictionary, auto_hide: float = 4.0) -> void:
 	for c in _wave_box.get_children():
 		c.queue_free()
+	if r.has("act"):
+		var at := UITheme.label(Lore.ACTS[int(r["act"])]["title"], 12, Defs.GOLD, UITheme.font_semibold)
+		at.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_wave_box.add_child(at)
 	var t := UITheme.label("WAVE %d / %d INBOUND" % [r["wave"], r["total"]], 30, Defs.ENEMY_COLOR, UITheme.font_bold)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_wave_box.add_child(t)
@@ -796,7 +956,8 @@ func wave_alert(r: Dictionary, auto_hide: float = 4.0) -> void:
 	d.fit_content = true
 	d.add_theme_font_size_override("normal_font_size", 14)
 	d.add_theme_font_size_override("italics_font_size", 14)
-	d.text = "[center][color=#8cb8ff][i]HQ Intelligence: %s[/i][/color][/center]" % r["doctrine"]
+	var brief: String = ("[color=#e6edf3]Capt. Ardent: “%s”[/color]\n" % r["briefing"]) if r.has("briefing") else ""
+	d.text = "[center]%s[color=#8cb8ff][i]HQ Intelligence: %s[/i][/color][/center]" % [brief, r["doctrine"]]
 	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_wave_box.add_child(d)
 	var hint := UITheme.label("click to dismiss", 11, UITheme.TEXT_DIM)
@@ -859,12 +1020,61 @@ func _place_tooltip() -> void:
 	_tooltip.position = p
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _tooltip.visible:
 		_place_tooltip()
+	if _ticker_label != null and _ticker_text != "":
+		_ticker_label.position.x -= 70.0 * delta
+		if _ticker_label.position.x < -_ticker_label.size.x:
+			_ticker_label.position.x = _ticker_clip.size.x
 
 
 ## True if the mouse is over an interactive HUD element.
 func mouse_over_ui() -> bool:
 	var hovered := get_viewport().gui_get_hovered_control()
 	return hovered != null and hovered != self
+
+
+# --------------------------------------------------------------------------------------------
+# Story widgets
+# --------------------------------------------------------------------------------------------
+
+func _set_ticker(items: Array) -> void:
+	var text := "     ◆     ".join(items)
+	if text == _ticker_text:
+		return
+	_ticker_text = text
+	_ticker_label.text = text
+	_ticker_label.reset_size()
+	_ticker_label.position.x = _ticker_clip.size.x if _ticker_clip.size.x > 0 else 1400.0
+
+
+func show_comms(beat: Dictionary) -> void:
+	var p: Dictionary = Lore.person(beat["speaker"])
+	var f: Dictionary = Lore.FACTIONS.get(p["faction"], Lore.FACTIONS["tessera"])
+	for c in _comms_icon_slot.get_children():
+		c.queue_free()
+	_comms_icon_slot.add_child(UITheme.person_emblem(beat["speaker"], 40))
+	_comms_name.text = beat.get("title", p["name"]) if beat.get("act", false) else p["name"]
+	_comms_name.add_theme_color_override("font_color", Defs.GOLD if beat.get("act", false) else UITheme.TEXT)
+	_comms_title.text = ("%s · %s" % [p["name"], p["title"]]) if beat.get("act", false) else p["title"]
+	_comms_text.text = beat["text"]
+	_comms.add_theme_stylebox_override("panel", UITheme.box(Color(0.03, 0.07, 0.11, 0.96), Color(f["color"], 0.85), 1, 7, Vector4(16, 12, 16, 14)))
+	_comms.visible = true
+	_comms.modulate.a = 0.0
+	create_tween().tween_property(_comms, "modulate:a", 1.0, 0.25)
+	hide_hint()
+
+
+func comms_visible() -> bool:
+	return _comms.visible
+
+
+func show_intercept(speaker: String, text: String, hold: float = 3.2) -> void:
+	_intercept_label.text = "[color=#ff8fc7][b]INTERCEPT · %s[/b][/color]\n[color=#f3dce9]“%s”[/color]" % [speaker, text]
+	if _intercept_tween:
+		_intercept_tween.kill()
+	_intercept_tween = create_tween()
+	_intercept_tween.tween_property(_intercept, "modulate:a", 1.0, 0.2)
+	_intercept_tween.tween_interval(hold)
+	_intercept_tween.tween_property(_intercept, "modulate:a", 0.0, 0.5)

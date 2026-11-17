@@ -2,8 +2,23 @@ class_name HowToPlayPanel
 extends Modal
 ## Rules reference.
 
-const TEXT := """[b][color=#4fd1c5]OBJECTIVE[/color][/b]
-An enemy carrier fleet is launching wave after wave of aircraft at your archipelago. [b]Protect your Capital[/b]. If it falls, the war is lost. You win by surviving every wave, or by finding and [b]sinking every enemy carrier[/b].
+const TEXT := """[b][color=#ff8fc7]THE SETTING[/color][/b]
+The [b]Republic of Tessera[/b] is an island democracy that makes nearly every advanced chip on Earth. Across the Lantern Strait, the rising [b]Celestine Commonwealth[/b] calls it a lost province and has declared a “Peace Enforcement Quarantine.” Far to the west, the [b]Hesperian Federation[/b] keeps its fleet “visible but not present.” You command Tessera's Air Defense Command. The full world bible is in docs/WORLD.md, and the [b]Intel Archive[/b] [I] collects dossiers and documents as the story unfolds.
+
+[b][color=#ff8fc7]DIRECTIVES[/color][/b]
+Between waves, ministers, admirals, CEOs, hackers and back channels bring you decisions. Every option lists its concrete consequences. Some change supplies or research, some make the next waves stronger or weaker, some change what the enemy knows, and all of them change how the war ends. You must answer a directive before ending your turn.
+
+[b][color=#ff8fc7]RESOLVE & COMMITMENT[/color][/b]
+[b]Public Resolve[/b] is Tessera's will to fight: Defiant adds income, Shaken and Breaking cut it. Losing cities hurts it; repelling waves and sinking carriers raise it. [b]Hesperian Commitment[/b] decides whether the Federation sends arms shipments after each repelled wave.
+
+[b][color=#ff8fc7]THE FOUNDRY & THE GLASS SHIELD[/color][/b]
+[b]Silica Point[/b] hosts TLW's Fab 18 and produces extra supplies and research. While the [b]Glass Shield[/b] holds, Commonwealth planners will not target it, because they need the chips too. Some decisions crack the shield. Then the Foundry becomes their favorite target.
+
+[b][color=#ff8fc7]CYBER OPERATIONS[/color][/b]
+Spend research points on hacks [O]: make the enemy forget your sites, scramble their IFF, reveal and weaken the next wave, or roll their logistics back a day.
+
+[b][color=#4fd1c5]OBJECTIVE[/color][/b]
+The Commonwealth's carrier groups are launching wave after wave of aircraft at the archipelago. [b]Protect your Capital[/b]. If it falls, the war is lost. You win by surviving every wave, or by finding and [b]sinking every enemy carrier[/b].
 
 [b][color=#4fd1c5]TURNS[/color][/b]
 Each turn you collect supplies and research, then build, research, move units and launch operations. Press [b]END TURN[/b] (Space). In the enemy phase, aircraft fly toward their targets and your defenses [b]fire automatically[/b] at anything in range. Battle animations can be skipped with Space.
@@ -30,7 +45,7 @@ Airbases train [b]Interceptor[/b] squadrons. Move them (within 6 hexes of an Air
 Enemy carriers hide in the eastern deep. Spot one, then hit it with an [b]Air Strike[/b] from an Airbase (range 10) or a [b]Cruise Missile[/b] from a Missile Battery (range 12). Every carrier sunk shrinks future waves; sinking them all wins the war.
 
 [b][color=#4fd1c5]CONTROLS[/color][/b]
-Left click: select / build / order  ·  Shift+click: keep building  ·  Right click or Esc: cancel  ·  WASD, arrows or right-drag: pan  ·  Mouse wheel or Q/E: zoom  ·  1-0: quick build  ·  R: research  ·  V: coverage overlay  ·  Tab: next ready unit  ·  H: center on Capital  ·  Space: end turn / skip animations"""
+Left click: select / build / order  ·  Shift+click: keep building  ·  Right click or Esc: cancel  ·  WASD, arrows or right-drag: pan  ·  Mouse wheel or Q/E: zoom  ·  1-0: quick build  ·  R: research  ·  V: coverage overlay  ·  Tab: next ready unit  ·  H: center on Capital  ·  I: Intel Archive  ·  O: Cyber Ops  ·  Space: end turn / skip animations"""
 
 
 func _init() -> void:

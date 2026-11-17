@@ -5,7 +5,22 @@
 ## Overview
 "Isles of Resistance" is a single-player turn-based defense game set in a fictional archipelago. The player defends their islands against an AI-controlled air invasion using strategic deployments on a hex-based map. The game features real-time battle animations, a research system, and an adaptive AI opponent.
 
-An enemy carrier fleet is closing on your islands and launching wave after wave of drones, fighters, gunships, heavy bombers, cruise missiles and stealth bombers. Build air defenses, run reconnaissance, research new weapons, and decide when to strike back at the carriers themselves. Keep your Capital standing until every wave is repelled, or sink the whole fleet to end the war early.
+The Celestine Commonwealth's carrier groups are launching wave after wave of drones, fighters, gunships, heavy bombers, cruise missiles and stealth bombers at your islands. Build air defenses, run reconnaissance, research new weapons, and decide when to strike back at the carriers themselves. Keep your Capital standing until every wave is repelled, or sink the whole fleet to end the war early. Between waves, the war's politics come to your desk.
+
+## Setting
+*A neon-lit, near-future ocean. The old order is buffering.*
+
+The **Republic of Tessera** is a crowded, argumentative island democracy that makes nearly every advanced chip on Earth at Fab 18 in **Silica Point**. Across the Lantern Strait, the rising **Celestine Commonwealth** has climbed out of a century of humiliation and calls the islands a lost province awaiting "Recompletion". Its Steering Council has just declared a *Peace Enforcement Quarantine*. Far to the west, the **Hesperian Federation** has kept the peace, and its own pre-eminence, for eighty years under an *Ambiguity Doctrine*. It keeps Task Force Palisade "visible but not present", and it would quite like that chip factory relocated somewhere with its postal codes.
+
+Everyone else is navigating the weather:
+- the **Littoral Compact**, which trades with one side, drills with the other and insures everybody;
+- **TLW**, whose CEO preaches the *Glass Shield* (nobody bombs the factory the whole world depends on);
+- **Harmony Grid**, offering "Free 7G for the Island Province";
+- **Halberd Dynamics**, selling lasers with a subscription firing key;
+- the **Null Collective**, who leak everyone's secrets equally, in lowercase;
+- and **Auntie Sol**, whose pirate radio show speaks for everyone nobody asked.
+
+The setting draws on contemporary themes (contested sovereignty, maritime chokepoints, semiconductor supply chains, export controls, deterrence, cyber and information war) without retelling real events. No faction is simply good or evil. Commonwealth pilots are people with families, Hesperian officials have their own agenda, and Tesserans argue loudly with each other. The full world bible, covering factions, characters, history, hardware and tone rules, is in **[docs/WORLD.md](docs/WORLD.md)**.
 
 ## Features
 - **Turn-based strategy.** You and the AI alternate turns. On your turn you build, research, fly your squadrons and launch operations. In the enemy phase, aircraft fly toward their targets while your defenses fire automatically.
@@ -22,17 +37,27 @@ An enemy carrier fleet is closing on your islands and launching wave after wave 
   - It shifts its approach vector between waves.
   - It re-balances each wave against your favorite weapons: low-altitude gunships against SAM networks, high bombers over flak belts, fighter escorts once interceptors appear.
   - Every wave comes with an HQ Intelligence report describing how the enemy is adapting.
-- **Research system.** A 15-technology tree unlocks SAM Sites, Shelter Networks, Decoy Sites, AA Frigates, Missile Batteries and Laser Defense, plus many upgrades.
+- **A story that plays.** The campaign runs in four acts: *Quarantine*, *The Glass Shield*, *The Long Night* and *Terms*.
+  - **Directives.** Eight political dilemmas from admirals, ministers, CEOs, hackers and back channels. Each option has explicit consequences, such as supplies, research, enemy wave strength and what the enemy knows, and each shapes the ending.
+  - **Public Resolve** changes your income. **Hesperian Commitment** brings arms shipments after each repelled wave.
+  - **The Glass Shield** keeps Silica Point off enemy target lists until some decision cracks it.
+  - **Cyber Ops** spend research on hacks such as *Null Pointer*, *Rubber Duck*, *Merge Conflict* and *Rollback*.
+  - **A live news ticker** shows Commonwealth state media, Hesperian cable news, Lumen public radio, pirate radio and advertisers telling the same war differently.
+  - **Intercepted pilot chatter** plays during battles, and the **Intel Archive** collects dossiers and contradictory documents.
+  - **Epilogues** depend on how the war ended and what you traded to end it.
+- **Research system.** A 15-technology tree unlocks Longbow SAM Sites, Shelter Networks, Decoy Sites, Lantern-class corvettes, Missile Batteries and Lumen Lasers, plus many upgrades.
 - **Counterattacks.** Find the carriers hiding in the eastern sea, then hit them with Air Strikes from Airbases or Cruise Missiles from Missile Batteries. Every carrier sunk shrinks future waves.
 - **Real-time battle animations.** Flak bursts, SAM trails, laser beams, dogfights, falling bombs, explosions and screen shake play out during the enemy phase. Skip them at any time with <kbd>Space</kbd>, speed them up, or turn them off in Settings.
+- **Neon night look.** Night-graded terrain, glowing coastlines, flickering city signage, searchlights over Lumen and Silica Point, and blinking navigation lights.
 - **Polish.** Animated title screen, four difficulty levels with an even ramp, autosave and Continue, a Hall of Fame, tutorial hints, an in-game How to Play guide, and settings for audio, animation speed and display.
 - **Music and sound.** Three procedurally composed music cues (title theme, a calm planning track and a driving battle track that crossfades in during the enemy phase) plus synthesized sound effects. The music is rendered on background threads on first launch and cached.
 - **No external assets.** All art is procedural vector drawing and every sound is synthesized in code. The only bundled asset is the [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) font (SIL OFL).
 
 | | |
 |---|---|
-| ![Title screen](docs/screenshots/menu.png) | ![Research tree](docs/screenshots/research.png) |
-| ![Enemy wave inbound](docs/screenshots/wave.png) | ![Carrier strike](docs/screenshots/strike.png) |
+| ![Title screen](docs/screenshots/menu.png) | ![A directive](docs/screenshots/directive.png) |
+| ![Intel Archive](docs/screenshots/intel.png) | ![Epilogue](docs/screenshots/epilogue.png) |
+| ![Research tree](docs/screenshots/research.png) | ![Carrier strike](docs/screenshots/strike.png) |
 
 ## How to Play
 1. **Build.** Pick a structure in the **CONSTRUCT** panel (or press <kbd>1</kbd>–<kbd>0</kbd>) and click a hex. Hover a button to see its stats, and hold <kbd>Shift</kbd> to place several.
@@ -41,7 +66,8 @@ An enemy carrier fleet is closing on your islands and launching wave after wave 
 4. **Read the intel.** Red dashed lines show where spotted aircraft are heading. The HQ Intelligence panel tells you how the enemy is adapting.
 5. **Fly interceptors.** Airbases train squadrons. Move them next to an enemy and attack, or leave them idle to patrol. Idle squadrons engage anything that comes within 2 hexes.
 6. **Strike back.** Fly a Recon Flight over the eastern sea, then hit spotted carriers from an Airbase (range 10) or a Missile Battery (range 12).
-7. Press <kbd>Space</kbd> to end your turn.
+7. **Decide.** Answer directives when they arrive. Check the ticker, the intercepts and the Intel Archive (<kbd>I</kbd>), and use Cyber Ops (<kbd>O</kbd>) when research allows.
+8. Press <kbd>Space</kbd> to end your turn.
 
 **Win** by surviving every wave or by sinking every carrier. **Lose** if your Capital falls.
 
@@ -65,6 +91,8 @@ Every wave is larger than the last, and new aircraft types (cruise missiles from
 | Zoom | Mouse wheel, <kbd>Q</kbd>/<kbd>E</kbd> |
 | Quick build | <kbd>1</kbd>–<kbd>0</kbd> |
 | Research tree | <kbd>R</kbd> |
+| Intel Archive | <kbd>I</kbd> |
+| Cyber Ops | <kbd>O</kbd> |
 | Defense coverage overlay | <kbd>V</kbd> |
 | Next ready unit | <kbd>Tab</kbd> |
 | Center on Capital | <kbd>H</kbd> |
@@ -129,12 +157,14 @@ $ aws s3 sync builds/web/ s3://your-s3-bucket-name
 ```
 Scenes/             Main.tscn (title screen) and Game.tscn
 Scripts/
-  core/             Defs (game data), Hex math, Pathfinder, MapGen, GameState (rules), EnemyAI
+  core/             Defs (game data), Hex math, Pathfinder, MapGen, GameState (rules), EnemyAI,
+                    Lore (narrative content), Campaign (acts, directives, standings, broadcasts, endings)
   view/             MapView, FogView, entity nodes, Effects (particles/projectiles), CameraRig, Icons (vector art)
-  ui/               HUD, research tree, modals (settings, pause, how to play, game over), MainMenu, theme
+  ui/               HUD, research tree, directives, cyber ops, intel archive, modals, MainMenu, theme
   autoload/         Settings, Audio (sound effects & music playback), MusicSynth (procedural composer), Session (saves & high scores), Transition
   Game.gd           scene controller: input modes and battle playback
 Shaders/            animated ocean
+docs/WORLD.md       world bible: setting, factions, characters, tone rules
 Assets/fonts/       Chakra Petch (SIL Open Font License)
 tests/              headless tests, test bot, screenshot automation
 backend/            legacy C++ server skeleton (unused by the game)

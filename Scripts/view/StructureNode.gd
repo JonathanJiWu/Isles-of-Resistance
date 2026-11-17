@@ -8,8 +8,10 @@ var label := ""
 var hp := 1
 var max_hp := 1
 var targeted := false
+var foundry := false
 var _t := 0.0
 var _animated := false
+var _signs: Array = []
 
 
 func setup(s: Dictionary) -> void:
@@ -18,8 +20,20 @@ func setup(s: Dictionary) -> void:
 	label = s.get("name", "")
 	hp = s["hp"]
 	max_hp = s["max_hp"]
-	_animated = kind == "radar" or kind == "laser"
+	foundry = s.get("foundry", false)
+	_animated = kind in ["radar", "laser", "city", "capital"]
 	_t = randf() * 10.0
+	_signs.clear()
+	if kind == "capital":
+		_signs = [["LUMEN", Vector2(-32, -30), Lore.SIGN_COLORS[1]], ["ASSEMBLY", Vector2(36, -12), Lore.SIGN_COLORS[2]]]
+	elif foundry:
+		_signs = [["TLW · FAB 18", Vector2(-4, -32), Lore.SIGN_COLORS[2]], ["CLEANROOM", Vector2(32, -8), Lore.SIGN_COLORS[1]]]
+	elif kind == "city":
+		var h: int = absi(hash(label))
+		for k in 2:
+			var txt: String = Lore.SIGNS[(h + k * 7) % Lore.SIGNS.size()]
+			var pos := Vector2(-26, -28) if k == 0 else Vector2(28, -9)
+			_signs.append([txt, pos, Lore.SIGN_COLORS[(h / 3 + k) % Lore.SIGN_COLORS.size()]])
 	set_process(true)
 
 
@@ -50,7 +64,11 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	var s := 1.0
+	if kind == "capital" or kind == "city":
+		_draw_city_lights()
 	Icons.structure(self, kind, Vector2.ZERO, s, _t)
+	for sg in _signs:
+		_draw_sign(sg[0], sg[1], sg[2])
 	var bar_y := -22.0 if kind == "capital" else -19.0
 	if hp < max_hp or kind == "capital":
 		EntityNodes.hp_bar(self, Vector2(0, bar_y), 30.0 if kind != "capital" else 38.0, float(hp) / max_hp)
@@ -64,3 +82,32 @@ func _draw() -> void:
 		for k in 4:
 			var a := k * PI * 0.5 + PI * 0.25
 			draw_arc(Vector2.ZERO, r, a - 0.35, a + 0.35, 6, col, 2.0, true)
+
+
+func _draw_city_lights() -> void:
+	var warm := Color(1.0, 0.45, 0.75) if foundry else Color(1.0, 0.6, 0.3)
+	for r in [46.0, 34.0, 23.0]:
+		draw_circle(Vector2(0, 4), r, Color(warm, 0.04))
+	if kind == "capital" or foundry:
+		for k in 2:
+			var a := _t * (0.35 if kind == "capital" else -0.28) + k * PI + (0.6 if foundry else 0.0)
+			var dir := Vector2.RIGHT.rotated(a)
+			var side := dir.orthogonal() * 9.0
+			var tip := dir * 150.0
+			draw_colored_polygon(PackedVector2Array([Vector2.ZERO, tip + side, tip - side]), Color(0.7, 0.95, 1.0, 0.05))
+			draw_colored_polygon(PackedVector2Array([Vector2.ZERO, tip * 0.6 + side * 0.4, tip * 0.6 - side * 0.4]), Color(0.8, 1.0, 1.0, 0.05))
+
+
+func _draw_sign(text: String, pos: Vector2, col: Color) -> void:
+	var font: Font = UITheme.font_bold
+	var fs := 8
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var flick := 0.88 + 0.12 * sin(_t * 3.1 + pos.x)
+	if sin(_t * 7.3 + pos.y * 3.0 + float(id)) > 0.985:
+		flick = 0.25
+	var c := Color(col, flick)
+	var rect := Rect2(pos - Vector2(w * 0.5 + 4.0, 8.0), Vector2(w + 8.0, 11.0))
+	draw_rect(rect.grow(2.0), Color(col, 0.12 * flick), false, 3.0)
+	draw_rect(rect, Color(0.02, 0.02, 0.05, 0.78))
+	draw_rect(rect, c, false, 1.1)
+	draw_string(font, pos - Vector2(w * 0.5, -1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, c)
