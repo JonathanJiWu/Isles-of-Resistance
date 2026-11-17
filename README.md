@@ -2,6 +2,22 @@
 
 ![Battle over the archipelago](docs/screenshots/battle.png)
 
+## Download
+**Play on Windows:** grab the installer for your PC from the [latest release](https://github.com/JonathanJiWu/Isles-of-Resistance/releases/latest).
+
+| Your PC | Installer (recommended) | No-install zip |
+|---|---|---|
+| **Windows 10 or 11, Intel or AMD** (most PCs) | **[IslesOfResistance-Setup-x64.exe](https://github.com/JonathanJiWu/Isles-of-Resistance/releases/latest/download/IslesOfResistance-Setup-x64.exe)** | [IslesOfResistance-Windows-x64.zip](https://github.com/JonathanJiWu/Isles-of-Resistance/releases/latest/download/IslesOfResistance-Windows-x64.zip) |
+| **Windows on ARM** (Snapdragon-powered laptops and tablets, such as many Copilot+ PCs) | **[IslesOfResistance-Setup-ARM64.exe](https://github.com/JonathanJiWu/Isles-of-Resistance/releases/latest/download/IslesOfResistance-Setup-ARM64.exe)** | [IslesOfResistance-Windows-ARM64.zip](https://github.com/JonathanJiWu/Isles-of-Resistance/releases/latest/download/IslesOfResistance-Windows-ARM64.zip) |
+
+- **Which one?** Open **Settings → System → About** and check **System type**: *x64-based processor* means x64, *ARM-based processor* means ARM64. The x64 installer warns you if it's started on an ARM PC, and the ARM64 installer refuses to install on an x64 PC.
+- **The installer** sets the game up for your account only (no administrator prompt), adds Start menu and desktop shortcuts, and registers an uninstaller under **Settings → Apps**. The zip runs from any folder with no installation.
+- **"Windows protected your PC"?** The builds aren't code-signed yet, so SmartScreen warns about new downloads. Click **More info → Run anyway**. Each release includes `SHA256SUMS.txt` so you can verify the files with `Get-FileHash` in PowerShell.
+- **Saves, Hall of Fame and settings** live in `%APPDATA%\Isles of Resistance` and survive updates. To update, run the newer installer over the old one.
+- **Requirements:** 64-bit Windows 10 or 11 and a GPU with OpenGL 3.3 or Direct3D 11. The game falls back to Direct3D 11 automatically when OpenGL isn't available, as on many ARM laptops.
+
+On macOS or Linux, [run it from source](#installation--setup) with Godot.
+
 ## Overview
 "Isles of Resistance" is a single-player turn-based defense game set in a fictional archipelago. The player defends their islands against an AI-controlled air invasion using strategic deployments on a hex-based map. The game features real-time battle animations, a research system, and an adaptive AI opponent.
 
@@ -106,11 +122,14 @@ Every wave is larger than the last, and new aircraft types (cruise missiles from
 - **Game logic:** a deterministic, engine-independent simulation (`Scripts/core`) that emits event streams for the view layer to animate
 - **Persistence:** local saves, settings and high scores in Godot's `user://` directory
 - **Testing:** a headless GDScript test suite with simulated full campaigns, plus a rendered mouse-and-keyboard playtest (`tests/`)
-- **CI/CD:** GitHub Actions runs the test suite on every push (`.github/workflows/tests.yml`)
+- **CI/CD:** GitHub Actions runs the test suite on every push (`.github/workflows/tests.yml`). Pushing a version tag builds the Windows x64 and ARM64 installers, plays the exported game, and publishes a GitHub release (`.github/workflows/release.yml`)
+- **Packaging:** Godot export presets for Windows x64 and ARM64 (`export_presets.cfg`), NSIS installers, and a build script that runs on Linux, macOS or Windows (`installer/`)
 
 The `backend/` folder holds the original C++ server skeleton (WebSocket/REST/SQLite plan) from before the project switched to Godot. The game does not use it; it is kept as a starting point for future online features.
 
 ## Installation & Setup
+To just play on Windows, use the [installers above](#download). To run or modify the game from source:
+
 ### Prerequisites
 - [Godot Engine 4.4 or newer](https://godotengine.org/download) (the standard build, not .NET)
 - Git
@@ -142,16 +161,42 @@ $ godot --path . -s tests/screenshots.gd -- --sandbox <output_dir>     # capture
 ```
 `--sandbox` keeps these runs away from your real save, settings and Hall of Fame.
 
-## Building & Deployment
-Install the export templates (**Editor → Manage Export Templates**), then add presets for Windows, macOS, Linux or Web under **Project → Export**. For example:
+## Building & Releasing
+### Windows installers
+`export_presets.cfg` defines two presets, **Windows x64** and **Windows ARM64**. `installer/build_windows.sh` builds everything a release needs into `dist/`:
+
+| File | What it is |
+|---|---|
+| `IslesOfResistance-Setup-x64.exe` | NSIS installer for Intel/AMD 64-bit Windows |
+| `IslesOfResistance-Setup-ARM64.exe` | NSIS installer for Windows on ARM |
+| `IslesOfResistance-Windows-x64.zip`, `IslesOfResistance-Windows-ARM64.zip` | no-install zips |
+| `SHA256SUMS.txt` | checksums of all of the above |
+
+```sh
+$ GODOT=/path/to/godot installer/build_windows.sh          # version from project.godot
+```
+It needs Godot 4.4.1 with its export templates (**Editor → Manage Export Templates**), [NSIS 3](https://nsis.sourceforge.io/) (`makensis`; `apt install nsis` or `brew install makensis`), Node.js 18+, `zip` and Python 3. The script:
+- exports both architectures (game executable plus `.pck`);
+- stamps the game icon and version information into each executable with [resedit](https://github.com/jet2jet/resedit-js), which is pure JavaScript, so Wine and rcedit aren't needed;
+- writes `THIRD-PARTY-NOTICES.txt` (Godot's license and components, and the font license);
+- builds the installers and zips.
+
+The installer's artwork (`installer/windows/icon.ico`, `welcome.bmp`, `header.bmp`) is generated from `icon.svg` by `installer/windows/make_assets.py`.
+
+### Publishing a release
+Set `application/config/version` in `project.godot`, commit, and push a matching tag:
+```sh
+$ git tag v1.0.1
+$ git push origin v1.0.1
+```
+The **Release** workflow builds both architectures, plays the exported game with the mouse-and-keyboard playtest, and publishes the GitHub release with every file attached. File names stay the same from release to release, so the download links at the top of this README always point to the newest version.
+
+### Other platforms
+Add presets for macOS, Linux or Web under **Project → Export**. For example:
 ```sh
 $ godot --headless --path . --export-release "Linux" builds/IslesOfResistance.x86_64
 ```
-The Web export is a static site, so it can be hosted on any static host, such as AWS S3 + CloudFront:
-```sh
-$ godot --headless --path . --export-release "Web" builds/web/index.html
-$ aws s3 sync builds/web/ s3://your-s3-bucket-name
-```
+The Web export is a static site that any static host can serve, such as AWS S3 + CloudFront.
 
 ## Project Structure
 ```
@@ -167,6 +212,8 @@ Shaders/            animated ocean
 docs/WORLD.md       world bible: setting, factions, characters, tone rules
 Assets/fonts/       Chakra Petch (SIL Open Font License)
 tests/              headless tests, test bot, screenshot automation
+installer/          Windows packaging: build script, NSIS installer, icon/version stamping, release notes
+export_presets.cfg  Windows x64 and ARM64 export presets
 backend/            legacy C++ server skeleton (unused by the game)
 ```
 

@@ -1,0 +1,9 @@
+{
+  "name": "isles-of-resistance-windows-packaging",
+  "private": true,
+  "description": "Stamps the game icon and version information into the exported Windows executables.",
+  "type": "module",
+  "dependencies": {
+    "resedit": "3.1.1"
+  }
+}

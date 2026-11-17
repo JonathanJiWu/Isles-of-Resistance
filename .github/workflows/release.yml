@@ -1,0 +1,104 @@
+name: Release
+
+# Push a tag like v1.0.1 (matching application/config/version in project.godot)
+# to build the Windows installers and publish them as a GitHub release.
+# Re-running for an existing tag replaces that release's files.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish (for example v1.0.0)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: ubuntu-24.04
+    env:
+      GODOT_VERSION: 4.4.1
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Check the tag matches the project version
+        run: |
+          VERSION="${TAG#v}"
+          PROJECT="$(sed -n 's/^config\/version="\(.*\)"$/\1/p' project.godot)"
+          if [ "$VERSION" != "$PROJECT" ]; then
+            echo "::error::Tag $TAG does not match application/config/version ($PROJECT) in project.godot"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache Godot and its Windows export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-windows-templates-v1
+
+      - name: Download Godot and its Windows export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot/templates && cd ~/godot
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          wget -q "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" godot
+          wget -q "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q -j "Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            'templates/version.txt' 'templates/windows_*_x86_64*.exe' 'templates/windows_*_arm64*.exe' -d templates
+          rm -f ./*.zip ./*.tpz
+
+      - name: Install export templates, NSIS and a virtual display
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          ln -sfn ~/godot/templates "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          sudo apt-get update -q
+          sudo apt-get install -y -q nsis xvfb libgl1-mesa-dri
+
+      - name: Build installers and zips (x64 and ARM64)
+        run: GODOT="$HOME/godot/godot" installer/build_windows.sh "$VERSION"
+
+      - name: Play the exported game with mouse and keyboard
+        # The game data (.pck) is identical for both architectures, so the
+        # Linux engine can run it to prove the export itself is playable.
+        run: >
+          timeout 900 xvfb-run -a -s "-screen 0 1600x900x24"
+          "$HOME/godot/godot" --main-pack build/windows-x64/IslesOfResistance.pck
+          --resolution 1600x900 --rendering-driver opengl3
+          -s "$PWD/tests/input_playtest.gd" -- --sandbox
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed "s/{VERSION}/$VERSION/g" installer/release_notes.md > "$RUNNER_TEMP/notes.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Isles of Resistance $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Keep the build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-logs
+          path: build/*.log
+          if-no-files-found: ignore

@@ -4,3 +4,8 @@
 
 # Export output
 /builds/
+
+# Windows packaging output
+/build/
+/dist/
+/installer/windows/node_modules/
