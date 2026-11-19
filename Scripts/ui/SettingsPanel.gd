@@ -29,6 +29,17 @@ func _init() -> void:
 	_toggle(grid, "Show hex grid", "show_grid")
 	_toggle(grid, "Edge-of-screen panning", "edge_pan")
 	_toggle(grid, "Tutorial hints", "tutorial_hints")
+	grid.add_child(UITheme.label("One-minute field training", 15))
+	var replay := UITheme.button("Replay in next campaign" if Settings.tutorial_done else "Runs in next campaign", 0, 32)
+	replay.add_theme_font_size_override("font_size", 13)
+	replay.disabled = not Settings.tutorial_done
+	replay.tooltip_text = "Run the one-minute interactive tutorial at the start of your next new campaign."
+	replay.pressed.connect(func():
+		Audio.play("click")
+		Settings.set_and_save("tutorial_done", false)
+		replay.text = "Runs in next campaign"
+		replay.disabled = true)
+	grid.add_child(replay)
 	_toggle(grid, "Fullscreen", "fullscreen")
 	var done := UITheme.button("Done", 160, 40)
 	done.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

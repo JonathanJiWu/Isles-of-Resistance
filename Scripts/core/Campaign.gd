@@ -10,6 +10,7 @@ const FOUNDRY_RP := 3
 const DIRECTIVE_FRACTIONS := [0.1, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.92]
 
 var resolve := 60
+var escalation := 1               # 0 gray zone, 1 quarantine, 2 blockade, 3 strikes, 4 assault
 var ally := 50
 var flags := {}
 var choices := {}
@@ -609,7 +610,7 @@ func ending(st: GameState) -> Dictionary:
 # Persistence
 # --------------------------------------------------------------------------------------------
 
-const _FIELDS := ["resolve", "ally", "flags", "choices", "schedule", "next_directive", "pending", "budget_mods",
+const _FIELDS := ["resolve", "escalation", "ally", "flags", "choices", "schedule", "next_directive", "pending", "budget_mods",
 	"glass", "foundry_id", "foundry_mult", "accuracy_bonus", "strike_lock_until", "no_new_types", "convoy",
 	"reveal_next", "act", "codex", "codex_unseen", "news", "beats", "ops_ready", "merge_used_wave", "shipments",
 	"last_decision", "used_intercepts", "report"]

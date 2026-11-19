@@ -241,6 +241,55 @@ static func _attempt(s: int, w: int, h: int, n_cities: int, n_carriers: int, for
 			best_r = sc
 			start_radar = hx
 
+	# Strategic infrastructure: an LNG-fired power station on a sheltered coast near the Capital,
+	# and the landing station where the undersea data cables come ashore.
+	var occupied: Array = [capital]
+	occupied.append_array(cities)
+	if start_flak != Hex.INVALID:
+		occupied.append(start_flak)
+	if start_radar != Hex.INVALID:
+		occupied.append(start_radar)
+	var power := Hex.INVALID
+	var best_p := -INF
+	for hx in land:
+		if tiles[hx] == "mountain" or occupied.has(hx):
+			continue
+		var d := Hex.distance(hx, capital)
+		if d < 2 or d > 7 or _min_distance(hx, occupied) < 2:
+			continue
+		var west := false
+		var wet := false
+		for i in 6:
+			var nb: Vector2i = hx + Hex.DIRS[i]
+			if offset.has(nb) and not land_set.has(nb):
+				wet = true
+				if i in [2, 3, 4]:
+					west = true
+		if not wet:
+			continue
+		var sc := -absf(d - 3.5) * 0.6 + (2.0 if west else 0.0) + (2.0 if island_of[hx] == capital_island else 0.0) + rng.randf()
+		if sc > best_p:
+			best_p = sc
+			power = hx
+	if power != Hex.INVALID:
+		occupied.append(power)
+	var cable := Hex.INVALID
+	var best_c := -INF
+	for hx in land:
+		if tiles[hx] == "mountain" or occupied.has(hx):
+			continue
+		var d := Hex.distance(hx, capital)
+		if d < 3 or d > 9 or _min_distance(hx, occupied) < 2:
+			continue
+		if power != Hex.INVALID and Hex.distance(hx, power) < 3:
+			continue
+		if _water_distance(hx, land_set, 1) != 0:
+			continue
+		var sc := (2.0 if tiles[hx] == "beach" else 0.0) + rng.randf() * 1.5
+		if sc > best_c:
+			best_c = sc
+			cable = hx
+
 	var names := CITY_NAMES.duplicate()
 	_shuffle(names, rng)
 	var city_list: Array = []
@@ -255,10 +304,19 @@ static func _attempt(s: int, w: int, h: int, n_cities: int, n_carriers: int, for
 		"cities": city_list,
 		"start_flak": start_flak,
 		"start_radar": start_radar,
+		"power": power,
+		"cable": cable,
 		"carriers": carriers,
 		"land_count": total_land,
 		"island_count": islands.size(),
 	}
+
+
+static func _min_distance(hx: Vector2i, others: Array) -> int:
+	var best := 999
+	for o in others:
+		best = mini(best, Hex.distance(hx, o))
+	return best
 
 
 static func _water_distance(hx: Vector2i, land_set: Dictionary, cap: int) -> int:

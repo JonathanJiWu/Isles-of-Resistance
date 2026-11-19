@@ -69,6 +69,14 @@ const STRUCTURES := {
 		"name": "City", "build": false, "hp": 80, "vision": 2, "income": 5, "value": 7,
 		"desc": "Population center. Provides +5 supplies per turn while it stands. Losing one shakes Public Resolve.",
 	},
+	"power": {
+		"name": "Power Station", "build": false, "hp": 70, "vision": 1, "value": 6,
+		"desc": "LNG-fired turbines and the terminal that feeds them: most of the island's electricity. If it is knocked out the grid browns out: lasers go dark, radars lose range and the Foundry slows.",
+	},
+	"cable": {
+		"name": "Cable Landing Station", "build": false, "hp": 40, "vision": 1, "value": 4,
+		"desc": "Where the undersea data cables come ashore, with a microwave relay as backup. If it is lost, communications degrade and your intelligence becomes less reliable.",
+	},
 	"flak": {
 		"name": "Flak Battery", "build": true, "cost": 30, "hp": 40, "vision": 2,
 		"range": 1, "shots": 2, "dmg_low": 12, "dmg_high": 6, "acc": 0.75, "weapon": "flak", "value": 3,

@@ -46,27 +46,41 @@ func _build_background() -> void:
 	mat.set_shader_parameter("size", ocean.size)
 	ocean.material = mat
 	_bg_world.add_child(ocean)
+	var hubs: Array = [gen["capital"]]
+	for c in gen["cities"]:
+		hubs.append(c["pos"])
+	var occupied: Array = hubs.duplicate()
+	for k in ["power", "cable", "start_radar", "start_flak"]:
+		if gen.get(k, Hex.INVALID) != Hex.INVALID:
+			occupied.append(gen[k])
+			if k == "power" or k == "cable":
+				hubs.append(gen[k])
+	var env := EnvGen.generate(randi() % 100000 + 1, gen["tiles"], gen["cells"], Defs.MAP_W, Defs.MAP_H, hubs, occupied)
 	_bg_map = MapView.new()
 	_bg_map.show_grid = false
-	_bg_map.setup(gen["tiles"], gen["cells"])
+	_bg_map.setup(gen["tiles"], gen["cells"], env)
 	_bg_world.add_child(_bg_map)
+	var amb := AmbientLayer.new()
+	_bg_world.add_child(amb)
+	amb.setup(env, gen["tiles"])
 	var deco := Node2D.new()
 	deco.y_sort_enabled = true
 	_bg_world.add_child(deco)
-	var cap := StructureNode.new()
-	cap.setup({"id": 0, "kind": "capital", "name": gen["capital_name"], "hp": 150, "max_hp": 150})
-	cap.position = MapView.top_center(gen["tiles"], gen["capital"])
-	deco.add_child(cap)
+	var sites: Array = [["capital", gen["capital"], gen["capital_name"]]]
 	for c in gen["cities"]:
-		var cn := StructureNode.new()
-		cn.setup({"id": 0, "kind": "city", "name": c["name"], "hp": 80, "max_hp": 80})
-		cn.position = MapView.top_center(gen["tiles"], c["pos"])
-		deco.add_child(cn)
-	if gen["start_radar"] != Hex.INVALID:
-		var rn := StructureNode.new()
-		rn.setup({"id": 0, "kind": "radar", "hp": 30, "max_hp": 30})
-		rn.position = MapView.top_center(gen["tiles"], gen["start_radar"])
-		deco.add_child(rn)
+		sites.append(["city", c["pos"], c["name"]])
+	for k in [["radar", "start_radar", ""], ["flak", "start_flak", ""], ["power", "power", Lore.POWER_NAMES[0]], ["cable", "cable", Lore.CABLE_NAMES[0]]]:
+		if gen.get(k[1], Hex.INVALID) != Hex.INVALID:
+			sites.append([k[0], gen[k[1]], k[2]])
+	var occ := {}
+	for site in sites:
+		var sn := StructureNode.new()
+		var hp: int = Defs.STRUCTURES[site[0]]["hp"]
+		sn.setup({"id": 0, "kind": site[0], "name": site[2], "hp": hp, "max_hp": hp, "pos": site[1], "facing": _facing(gen["tiles"], site[1])})
+		sn.position = MapView.top_center(gen["tiles"], site[1])
+		deco.add_child(sn)
+		occ[site[1]] = true
+	_bg_map.set_occupied(occ)
 	_air = Node2D.new()
 	_bg_world.add_child(_air)
 	_bg_cam = Camera2D.new()
@@ -198,6 +212,9 @@ func _build_ui() -> void:
 			_menu_box.add_child(cb)
 			_menu_box.add_child(l)
 	_menu_box.add_child(_menu_button("New Campaign", _toggle_new_panel))
+	var training := _menu_button("Field Training", func(): Session.start_new(randi() % 1000000 + 1, "recruit", true))
+	training.tooltip_text = "A one-minute interactive tutorial at the start of a Recruit campaign: camera, building, coverage and your objective."
+	_menu_box.add_child(training)
 	_menu_box.add_child(_menu_button("How to Play", func(): _open(HowToPlayPanel.new())))
 	_menu_box.add_child(_menu_button("Settings", func(): _open(SettingsPanel.new())))
 	_menu_box.add_child(_menu_button("Quit", func(): get_tree().quit()))
@@ -209,6 +226,14 @@ func _build_ui() -> void:
 	ver.offset_left = 16
 	ver.offset_top = -28
 	add_child(ver)
+
+
+static func _facing(tiles: Dictionary, h: Vector2i) -> int:
+	for i in 6:
+		var nb: Vector2i = h + Hex.DIRS[i]
+		if tiles.has(nb) and Defs.TERRAIN[tiles[nb]]["water"]:
+			return i
+	return -1
 
 
 func _menu_button(text: String, cb: Callable) -> Button:

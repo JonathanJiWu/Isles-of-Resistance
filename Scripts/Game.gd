@@ -15,6 +15,9 @@ var show_coverage := false
 
 var world: Node2D
 var map_view: MapView
+var ambient: AmbientLayer
+var weather_fx: WeatherLayer
+var decals: DecalLayer
 var overlay_low: DrawLayer
 var entities: Node2D
 var fog: FogView
@@ -41,6 +44,7 @@ var _last_ruins := -1
 var _result_recorded := false
 var _directive_deferred := false
 var _summary_wait := false
+var tutorial: TutorialCoach
 
 
 func _ready() -> void:
@@ -53,7 +57,8 @@ func _ready() -> void:
 		if sd == 0:
 			sd = randi() % 1000000 + 1
 		state = GameState.create(sd, p.get("difficulty", "veteran"))
-	map_view.setup(state.tiles, state.cells)
+	map_view.setup(state.tiles, state.cells, state.env)
+	ambient.setup(state.env, state.tiles)
 	map_view.show_grid = Settings.show_grid
 	fog.setup(state.tiles, state.cells)
 	var rect := MapView.map_rect(state.cells)
@@ -80,7 +85,11 @@ func _ready() -> void:
 	hud.banner("TURN %d" % state.turn, UITheme.ACCENT, 1.2)
 	Session.save_game(state)
 	Audio.music("planning")
-	_present_story()
+	hud.banner(EnvGen.theater_title(state.env).to_upper(), Color(1.0, 0.55, 0.8), 2.2)
+	if p.get("mode", "new") == "new" and state.turn == 1 and (p.get("tutorial", false) or not Settings.tutorial_done):
+		_start_tutorial()
+	else:
+		_present_story()
 
 
 func _build_scene() -> void:
@@ -88,6 +97,10 @@ func _build_scene() -> void:
 	add_child(world)
 	map_view = MapView.new()
 	world.add_child(map_view)
+	decals = DecalLayer.new()
+	world.add_child(decals)
+	ambient = AmbientLayer.new()
+	world.add_child(ambient)
 	overlay_low = DrawLayer.new()
 	overlay_low.draw_fn = _draw_low
 	world.add_child(overlay_low)
@@ -107,6 +120,8 @@ func _build_scene() -> void:
 	world.add_child(overlay_top)
 	effects = Effects.new()
 	world.add_child(effects)
+	weather_fx = WeatherLayer.new()
+	world.add_child(weather_fx)
 	cam = CameraRig.new()
 	add_child(cam)
 	cam.make_current()
@@ -197,6 +212,7 @@ func sync_view() -> void:
 		n.position = _struct_pos(s["pos"])
 		n.set_hp(s["hp"], s["max_hp"])
 		n.targeted = targeted.has(s["id"]) and Settings.show_intents
+		n.order_ready = _structure_ready(s)
 		n.queue_redraw()
 	for id in u_nodes.keys():
 		if not state.units.has(id):
@@ -250,9 +266,30 @@ func sync_view() -> void:
 	if _last_ruins != state.ruins.size():
 		_last_ruins = state.ruins.size()
 		map_view.set_ruins(state.ruins)
+	var occ := {}
+	for s in state.structures.values():
+		occ[s["pos"]] = true
+	map_view.set_occupied(occ)
+	ambient.set_state(state.story.escalation, state.weather)
+	weather_fx.weather = state.weather
 	fog.update_fog(state.explored, state.visible_hexes)
 	overlay_low.queue_redraw()
 	hud.refresh()
+
+
+## True when the structure has an order waiting: train interceptors, commission a corvette,
+## or launch a strike at a spotted carrier. Shown as a pulsing marker above it.
+func _structure_ready(s: Dictionary) -> bool:
+	if state.phase != "player" or _is_over() or _animating:
+		return false
+	match s["kind"]:
+		"airbase":
+			return state.produce_check(s["id"], "interceptor") == "" or state.strike_check(s["id"]) == ""
+		"harbor":
+			return state.produce_check(s["id"], "frigate") == ""
+		"missile":
+			return state.strike_check(s["id"]) == ""
+	return false
 
 
 # --------------------------------------------------------------------------------------------
@@ -302,6 +339,8 @@ func _on_key(k: InputEventKey) -> void:
 			var cap := state.capital()
 			if not cap.is_empty():
 				cam.center_on(Hex.to_pixel(cap["pos"]))
+			if tutorial != null:
+				tutorial.notify("capital")
 		KEY_TAB:
 			_cycle_unit()
 		KEY_I:
@@ -695,6 +734,8 @@ func end_turn() -> void:
 		_directive_deferred = false
 		open_directive()
 		return
+	if tutorial != null:
+		tutorial.notify("end_turn")
 	_set_mode(Mode.BUSY)
 	hud.hide_hint()
 	hud.set_tooltip("")
@@ -1044,11 +1085,15 @@ func _impact(ev: Dictionary, follow: Array, sp: float) -> void:
 				if water:
 					effects.splash(p + Vector2(randf_range(-16, 16), randf_range(-10, 10)))
 				else:
-					effects.explosion(p + Vector2(randf_range(-20, 20), randf_range(-14, 14)), 0.6)
+					var miss_p := p + Vector2(randf_range(-20, 20), randf_range(-14, 14))
+					effects.explosion(miss_p, 0.6)
+					if ev["weapon"] != "guns":
+						decals.add_crater(miss_p, randf_range(3.0, 4.5))
 				Audio.play("explosion", -10.0)
 				effects.float_text(p, "MISS", Color(0.75, 0.8, 0.85), 13)
 			elif ev["weapon"] != "guns":
 				effects.explosion(p, 0.9 if ev["weapon"] != "rockets" else 0.6)
+				decals.add_scorch(p + Vector2(randf_range(-12, 12), randf_range(-8, 10)), randf_range(7.0, 11.0))
 				Audio.play("explosion", -4.0)
 				cam.shake(5.0 if ev["weapon"] == "bombs" or ev["weapon"] == "impact" else 2.5)
 		"strike":
@@ -1112,7 +1157,8 @@ func _apply_follow(follow: Array, _sp: float) -> void:
 					"structure":
 						var s: StructureNode = s_nodes.get(f["id"])
 						var p := _struct_pos(f["pos"])
-						effects.explosion(p, 1.6)
+						effects.demolition(p)
+						decals.add_scorch(p, 24.0)
 						Audio.play("big_explosion")
 						cam.shake(10.0)
 						if s != null:
@@ -1226,6 +1272,13 @@ func _draw_top(l: DrawLayer) -> void:
 	if state == null:
 		return
 	var t := Time.get_ticks_msec() / 1000.0
+	if tutorial != null:
+		for h in tutorial.highlight_hexes:
+			var c := _top(h)
+			var pulse := 0.5 + 0.5 * sin(t * 5.0)
+			l.hex_outline(c, Color(1.0, 0.45, 0.75, 0.55 + 0.4 * pulse), 3.0, 3.0 - pulse * 2.0)
+			var tip := c + Vector2(0, -44 - pulse * 6.0)
+			l.draw_colored_polygon(PackedVector2Array([tip + Vector2(-8, -10), tip + Vector2(8, -10), tip]), Color(1.0, 0.45, 0.75, 0.9))
 	if Settings.show_intents and not _animating:
 		for e in state.enemies.values():
 			if e["state"] == "rtb" or not state.enemy_detected(e):
@@ -1311,6 +1364,8 @@ func open_research() -> void:
 ## Shows queued comms cards, then the pending directive, then tutorial hints.
 func _present_story() -> void:
 	if _animating or _is_over() or (_modal != null and is_instance_valid(_modal)) or hud.comms_visible():
+		return
+	if tutorial != null:
 		return
 	if not state.story.beats.is_empty():
 		hud.show_comms(state.story.beats.pop_front())
@@ -1422,11 +1477,32 @@ func _show_game_over() -> void:
 
 
 # --------------------------------------------------------------------------------------------
-# Tutorial hints
+# Field training (the one-minute tutorial) and tutorial hints
 # --------------------------------------------------------------------------------------------
 
+func _start_tutorial() -> void:
+	tutorial = TutorialCoach.new(self)
+	hud.add_child(tutorial)
+	tutorial.finished.connect(_on_tutorial_finished)
+	tutorial.start()
+
+
+func _on_tutorial_finished(skipped: bool) -> void:
+	Settings.set_and_save("tutorial_done", true)
+	if tutorial != null:
+		tutorial.queue_free()
+	tutorial = null
+	overlay_top.queue_redraw()
+	if skipped:
+		hud.toast("Training skipped. Replay it any time: Field Training on the main menu.")
+	else:
+		hud.toast("Training complete. The strait is yours to hold, Commander.")
+		Audio.play("cleared", -4.0)
+	_present_story.call_deferred()
+
+
 func _maybe_hint() -> void:
-	if not Settings.tutorial_hints or _is_over():
+	if not Settings.tutorial_hints or _is_over() or tutorial != null:
 		return
 	var key := ""
 	var text := ""

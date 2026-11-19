@@ -9,8 +9,8 @@ const MAX_SCORES := 8
 var pending := {"mode": "new", "seed": 0, "difficulty": "veteran"}
 
 
-func start_new(seed_value: int, difficulty: String) -> void:
-	pending = {"mode": "new", "seed": seed_value, "difficulty": difficulty}
+func start_new(seed_value: int, difficulty: String, tutorial: bool = false) -> void:
+	pending = {"mode": "new", "seed": seed_value, "difficulty": difficulty, "tutorial": tutorial}
 	Transition.go("res://Scenes/Game.tscn")
 
 

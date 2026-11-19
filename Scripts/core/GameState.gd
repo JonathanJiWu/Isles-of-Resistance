@@ -3,7 +3,7 @@ extends RefCounted
 ## Complete, deterministic game model. Player actions and the enemy phase mutate the state
 ## and return a list of "events" (plain dictionaries) that the view layer animates.
 
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 
 var seed_value := 0
 var difficulty := "veteran"
@@ -41,6 +41,9 @@ var next_id := 1
 var waves_cleared := {}
 var last_wave_report := {}
 var capital_id := -1
+var env := {}                   # generated scenery and the campaign's theater (see EnvGen)
+var weather := "clear"
+var weather_rng := RandomNumberGenerator.new()
 
 var _sink = null                # event array receiving log events while resolving
 var _phase_kills := 0
@@ -76,6 +79,27 @@ func _setup(p_seed: int, p_difficulty: String) -> void:
 		_add_structure("flak", gen["start_flak"])
 	if gen["start_radar"] != Hex.INVALID:
 		_add_structure("radar", gen["start_radar"])
+	if gen.get("power", Hex.INVALID) != Hex.INVALID:
+		var ps := _add_structure("power", gen["power"])
+		ps["name"] = Lore.POWER_NAMES[rng.randi_range(0, Lore.POWER_NAMES.size() - 1)]
+	if gen.get("cable", Hex.INVALID) != Hex.INVALID:
+		var cs2 := _add_structure("cable", gen["cable"])
+		cs2["name"] = Lore.CABLE_NAMES[rng.randi_range(0, Lore.CABLE_NAMES.size() - 1)]
+	var hubs: Array = [gen["capital"]]
+	var occupied: Array = [gen["capital"]]
+	for c in gen["cities"]:
+		hubs.append(c["pos"])
+		occupied.append(c["pos"])
+	for k in ["power", "cable"]:
+		if gen.get(k, Hex.INVALID) != Hex.INVALID:
+			hubs.append(gen[k])
+			occupied.append(gen[k])
+	for k in ["start_flak", "start_radar"]:
+		if gen.get(k, Hex.INVALID) != Hex.INVALID:
+			occupied.append(gen[k])
+	env = EnvGen.generate(p_seed, tiles, cells, width, height, hubs, occupied)
+	weather_rng.seed = p_seed * 17 + 3
+	weather = EnvGen.next_weather(env, "", weather_rng)
 	for p in gen["carriers"]:
 		var cid := next_id
 		next_id += 1
@@ -111,11 +135,53 @@ func _add_structure(kind: String, pos: Vector2i) -> Dictionary:
 	if (kind == "capital" or kind == "city") and has_tech("hardened_shelters"):
 		mhp = int(round(mhp * 1.25))
 	var s := {"id": next_id, "cls": "structure", "kind": kind, "pos": pos, "hp": mhp, "max_hp": mhp,
-		"shots_left": 0, "acted": false, "repaired": false, "kills": 0, "name": "", "built_turn": turn}
+		"shots_left": 0, "acted": false, "repaired": false, "kills": 0, "name": "", "built_turn": turn,
+		"facing": _facing_for(pos)}
+	if kind == "airbase":
+		s["axis"] = _runway_axis(pos)
 	next_id += 1
 	structures[s["id"]] = s
 	ruins.erase(pos)
 	return s
+
+
+const _DIR_X := [1.0, 0.5, -0.5, -1.0, -0.5, 0.5]
+
+
+## Hex direction (0-5) a coastal installation faces: toward open water, preferring the side
+## opposite solid land and, slightly, the eastern threat axis. -1 when the hex is inland.
+func _facing_for(pos: Vector2i) -> int:
+	var best := -1
+	var best_sc := -INF
+	for i in 6:
+		var nb: Vector2i = pos + Hex.DIRS[i]
+		if not tiles.has(nb) or not is_water(nb):
+			continue
+		var sc: float = _DIR_X[i] * 0.3
+		var opp: Vector2i = pos + Hex.DIRS[(i + 3) % 6]
+		if tiles.has(opp) and not is_water(opp):
+			sc += 2.0
+		if terrain(nb) == "deep":
+			sc += 0.4
+		if sc > best_sc:
+			best_sc = sc
+			best = i
+	return best
+
+
+## Runway axis for an airbase: the long hex diagonal (+-30 degrees) with more land at its ends.
+func _runway_axis(pos: Vector2i) -> float:
+	var score := func(dirs: Array) -> int:
+		var n := 0
+		for i in dirs:
+			if is_land(pos + Hex.DIRS[i]):
+				n += 1
+		return n
+	var down: int = score.call([0, 5, 3, 2])
+	var up: int = score.call([0, 1, 3, 4])
+	if down == up:
+		return 0.5236 if (pos.x + pos.y) % 2 == 0 else -0.5236
+	return 0.5236 if down > up else -0.5236
 
 
 func _add_enemy(kind: String, pos: Vector2i, sector: String) -> Dictionary:
@@ -824,6 +890,8 @@ func start_player_turn() -> void:
 	for e in enemies.values():
 		e["reacted"] = false
 	recon = recon.filter(func(r): return r["expires"] > turn)
+	if turn > 1:
+		weather = EnvGen.next_weather(env, weather, weather_rng)
 	compute_visibility()
 	if wave < waves_total and countdown() == 0:
 		log_msg("Wave %d launches at the end of this turn. Final preparations!" % (wave + 1), "warn")
@@ -1401,7 +1469,8 @@ func to_dict() -> Dictionary:
 		"recon_used_turn": recon_used_turn, "stats": stats, "score": score, "messages": messages,
 		"rng_seed": rng.seed, "rng_state": rng.state, "next_id": next_id, "waves_cleared": waves_cleared,
 		"last_wave_report": last_wave_report, "capital_id": capital_id, "ai": ai.to_dict(),
-		"story": story.to_dict(),
+		"story": story.to_dict(), "env": env, "weather": weather,
+		"weather_seed": weather_rng.seed, "weather_state": weather_rng.state,
 	}
 
 
@@ -1442,6 +1511,10 @@ static func from_dict(d: Dictionary) -> GameState:
 	st.waves_cleared = d["waves_cleared"]
 	st.last_wave_report = d["last_wave_report"]
 	st.capital_id = d["capital_id"]
+	st.env = d.get("env", {})
+	st.weather = d.get("weather", "clear")
+	st.weather_rng.seed = d.get("weather_seed", 1)
+	st.weather_rng.state = d.get("weather_state", 0)
 	st.ai = EnemyAI.new()
 	st.ai.from_dict(d["ai"])
 	st.story = Campaign.new()

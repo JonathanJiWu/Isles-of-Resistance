@@ -38,7 +38,15 @@ func _part(p: Vector2, v: Vector2, life: float, size: float, col: Color, grow: f
 
 func explosion(p: Vector2, size: float = 1.0) -> void:
 	_rings.append({"p": p, "r0": 4.0 * size, "r1": 34.0 * size, "life": 0.45, "max": 0.45, "col": Color(1.0, 0.85, 0.5, 0.8)})
+	# Light flash that briefly lights up the surroundings.
+	_part(p, Vector2.ZERO, 0.24, 52.0 * size, Color(1.0, 0.78, 0.45, 0.32), 60.0, 0.0, 4)
 	_part(p, Vector2.ZERO, 0.18, 22.0 * size, Color(1.0, 0.95, 0.75, 0.95), 30.0, 0.0)
+	for i in int(3 * size):
+		var a := _rng.randf() * TAU
+		_part(p + Vector2.RIGHT.rotated(a) * 6.0 * size, Vector2.RIGHT.rotated(a) * 30.0, _rng.randf_range(0.35, 0.55), _rng.randf_range(7, 11) * size, Color(1.0, _rng.randf_range(0.35, 0.55), 0.1, 0.85), 10.0, 2.0)
+	for i in int(6 * size):
+		var a := _rng.randf_range(-PI, 0)
+		_part(p, Vector2.RIGHT.rotated(a) * _rng.randf_range(60.0, 170.0) * size, _rng.randf_range(0.55, 0.95), _rng.randf_range(1.6, 3.0), Color(0.12, 0.1, 0.09), 0.0, 0.3, 3)
 	for i in int(14 * size):
 		var a := _rng.randf() * TAU
 		var sp := _rng.randf_range(60.0, 190.0) * size
@@ -50,6 +58,17 @@ func explosion(p: Vector2, size: float = 1.0) -> void:
 	for i in int(5 * size):
 		var a := _rng.randf_range(-PI, 0)
 		_part(p, Vector2.RIGHT.rotated(a) * _rng.randf_range(50, 120), _rng.randf_range(0.6, 0.9), 2.2, Color(0.15, 0.12, 0.1), 0.0, 0.5, 2)
+
+
+## Destruction of an installation: double shockwave, big flash and a smoke column that lingers.
+func demolition(p: Vector2, size: float = 1.0) -> void:
+	explosion(p, 1.6 * size)
+	_rings.append({"p": p, "r0": 10.0, "r1": 90.0 * size, "life": 0.7, "max": 0.7, "col": Color(1.0, 0.9, 0.7, 0.7)})
+	_rings.append({"p": p, "r0": 6.0, "r1": 60.0 * size, "life": 0.5, "max": 0.5, "col": Color(1.0, 0.6, 0.3, 0.8)})
+	for i in 14:
+		var g := _rng.randf_range(0.12, 0.22)
+		_part(p + Vector2(_rng.randf_range(-12, 12), _rng.randf_range(-6, 6)), Vector2(_rng.randf_range(-6, 10), _rng.randf_range(-26, -14)),
+			_rng.randf_range(3.0, 5.5), _rng.randf_range(6, 10), Color(g, g, g * 1.05, 0.5), 7.0, 0.25)
 
 
 func airburst(p: Vector2) -> void:
@@ -110,7 +129,7 @@ func _process(delta: float) -> void:
 			continue
 		q["p"] += q["v"] * d
 		q["v"] *= maxf(0.0, 1.0 - q["drag"] * d)
-		if q["kind"] == 2:
+		if q["kind"] == 2 or q["kind"] == 3:
 			q["v"] += Vector2(0, 160) * d
 		q["size"] = maxf(0.3, q["size"] + q["grow"] * d)
 	var hits: Array = []
@@ -165,10 +184,20 @@ func _draw() -> void:
 		var k: float = q["life"] / q["max"]
 		var col: Color = q["col"]
 		col.a *= clampf(k * 1.5, 0.0, 1.0)
-		if q["kind"] == 1:
-			draw_line(q["p"], q["p"] - q["v"] * 0.03, col, q["size"], true)
-		else:
-			draw_circle(q["p"], q["size"], col)
+		match q["kind"]:
+			1:
+				draw_line(q["p"], q["p"] - q["v"] * 0.03, col, q["size"], true)
+			3:
+				var ang: float = q["life"] * 14.0
+				var hs: float = q["size"]
+				var c0: Vector2 = q["p"]
+				draw_colored_polygon(PackedVector2Array([c0 + Vector2(-hs, -hs * 0.6).rotated(ang), c0 + Vector2(hs, -hs * 0.6).rotated(ang),
+					c0 + Vector2(hs, hs * 0.6).rotated(ang), c0 + Vector2(-hs, hs * 0.6).rotated(ang)]), col)
+			4:
+				draw_circle(q["p"], q["size"], Color(col, col.a * 0.5))
+				draw_circle(q["p"], q["size"] * 0.55, col)
+			_:
+				draw_circle(q["p"], q["size"], col)
 	for s in _shots:
 		var k: float = minf(s["t"] / s["dur"], 1.0)
 		var pos := _shot_pos(s, k)

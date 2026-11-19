@@ -7,6 +7,7 @@ extends RefCounted
 const VALUE := {
 	"capital": 10.0, "city": 7.0, "lab": 6.0, "decoy": 8.0, "airbase": 6.0, "missile": 6.5,
 	"harbor": 5.0, "radar": 5.0, "sam": 4.0, "laser": 4.5, "flak": 3.0, "bunker": 2.0,
+	"power": 3.0, "cable": 2.5,
 }
 const CAUTION := {"strike": 1.0, "missile": 0.15, "sead": 0.35, "fighter": 0.5, "scout": 0.8}
 
@@ -29,7 +30,7 @@ var _sector_cache := {}
 
 func setup(st: GameState) -> void:
 	for s in st.structures.values():
-		if s["kind"] == "capital" or s["kind"] == "city":
+		if s["kind"] in ["capital", "city", "power", "cable"]:
 			known[s["id"]] = true
 	baseline_known = known.size()
 

@@ -44,6 +44,8 @@ const CITY_NAMES := [
 	"Orrin's Reach", "Mosaic Heights", "Stepper's End",
 ]
 const CARRIER_NAMES := ["CCS Patient Tide", "CCS Unbroken Promise", "CCS Recompletion"]
+const POWER_NAMES := ["Tidewater Power Station", "Kestrel Bay Power Station", "Saltmere LNG Power Station"]
+const CABLE_NAMES := ["Lantern-1 Cable Landing", "Seabright Cable Landing", "Old Customs Cable Landing"]
 ## Neon signage on Tesseran cities (environmental storytelling).
 const SIGNS := ["NOODLES", "KARAOKE", "7G FREE", "BRIGHTLINE", "PHARMACY", "SHELTER →", "OPEN 24H", "HARMONY",
 	"TESSAR FX", "LANTERN", "HALBERD", "DUMPLINGS", "CYBER CAFE", "REPAIRS", "HOTEL", "FERRY", "STRAIT TALK", "VOTE"]

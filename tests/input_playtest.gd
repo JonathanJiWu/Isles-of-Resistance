@@ -21,6 +21,7 @@ func _init() -> void:
 	Settings.anim_speed = 4.0
 	Session.delete_save()
 	print("window %s, viewport %s" % [DisplayServer.window_get_size(), root.get_visible_rect().size])
+	await _tutorial_flow()
 	await _menu_flow()
 	await _build_flow()
 	await _camera_and_overlays()
@@ -220,6 +221,68 @@ func attach_game() -> void:
 # --------------------------------------------------------------------------------------------
 # Flows
 # --------------------------------------------------------------------------------------------
+
+func _tutorial_flow() -> void:
+	print("- field training (one-minute tutorial)")
+	Settings.tutorial_done = false
+	change_scene_to_file("res://Scenes/Main.tscn")
+	await wait(1.0)
+	var tb := find_button(current_scene, "Field Training")
+	check(tb != null, "the main menu offers Field Training")
+	await click(center_of(tb))
+	await until(func(): return current_scene != null and current_scene.has_method("end_turn"), 8.0)
+	await wait(1.2)
+	attach_game()
+	var coach = game.tutorial
+	check(coach != null and coach.is_active(), "Field Training starts the tutorial coach")
+	check(st.difficulty == "recruit", "Field Training plays on Recruit")
+	check(not game.hud.comms_visible() and not game.hud.hint_visible(), "the tutorial holds back story cards and hints")
+	check(coach.STEPS[coach.step]["id"] == "situation", "step 1 sets the scene and points at the capital")
+	await key(KEY_H)
+	await wait(0.3)
+	check(coach.STEPS[coach.step]["id"] == "camera", "pressing H finds the capital and advances")
+	await key(KEY_D, 0.5)
+	await wheel(Vector2(800, 420), true)
+	await wheel(Vector2(800, 420), true)
+	await wait(0.4)
+	check(coach.STEPS[coach.step]["id"] == "build", "panning with D and zooming with the wheel advance the camera step")
+	var spots: Array = coach.highlight_hexes
+	check(not spots.is_empty(), "the build step highlights suggested sites")
+	await key(KEY_H)
+	await wait(0.6)
+	await key(KEY_1)
+	var target: Vector2i = spots[0]
+	await click(hex_screen(target))
+	await wait(0.3)
+	check(st.structure_at(target).get("kind", "") == "flak", "pressing 1 and clicking a highlighted hex builds a Flak Battery")
+	check(coach.STEPS[coach.step]["id"] == "coverage", "building advances to the coverage step")
+	await key(KEY_V)
+	await wait(0.3)
+	check(coach.STEPS[coach.step]["id"] == "objective", "pressing V shows coverage and advances to the objective")
+	var took: float = coach.elapsed
+	await key(KEY_SPACE)
+	await until(func(): return game.tutorial == null, 5.0)
+	check(game.tutorial == null and Settings.tutorial_done, "ending the turn completes the training and remembers it")
+	check(took < 90.0, "the five steps took %.0f s of play" % took)
+	await until(func(): return st.turn == 2 and not game._animating, 40.0)
+	check(st.turn == 2, "the first turn ends normally after the training")
+	# Skipping, and not repeating it for returning players.
+	Settings.tutorial_done = false
+	Session.start_new(13579, "recruit", true)
+	await until(func(): return current_scene != null and current_scene.has_method("end_turn") and current_scene.state != null and current_scene.state.seed_value == 13579, 8.0)
+	await wait(1.2)
+	attach_game()
+	check(game.tutorial != null, "a replay starts the training again")
+	await click(center_of(find_button(game.tutorial, "Skip tutorial")))
+	await wait(0.3)
+	check(game.tutorial == null and Settings.tutorial_done, "Skip tutorial ends it at once and remembers it")
+	Session.start_new(97531, "recruit")
+	await until(func(): return current_scene != null and current_scene.has_method("end_turn") and current_scene.state != null and current_scene.state.seed_value == 97531, 8.0)
+	await wait(1.2)
+	attach_game()
+	check(game.tutorial == null, "returning players are not shown the training again")
+	Session.delete_save()
+
 
 func _menu_flow() -> void:
 	print("- main menu")

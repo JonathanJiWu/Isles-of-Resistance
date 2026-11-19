@@ -16,6 +16,7 @@ var edge_pan := false
 var show_grid := true
 var show_intents := true
 var tutorial_hints := true
+var tutorial_done := false       # the one-minute field training has been completed or skipped
 
 
 func _ready() -> void:
@@ -63,6 +64,7 @@ func save_settings() -> void:
 	cfg.set_value("game", "show_grid", show_grid)
 	cfg.set_value("game", "show_intents", show_intents)
 	cfg.set_value("game", "tutorial_hints", tutorial_hints)
+	cfg.set_value("game", "tutorial_done", tutorial_done)
 	cfg.set_value("display", "fullscreen", fullscreen)
 	cfg.save(PATH)
 
@@ -80,6 +82,7 @@ func load_settings() -> void:
 	show_grid = cfg.get_value("game", "show_grid", show_grid)
 	show_intents = cfg.get_value("game", "show_intents", show_intents)
 	tutorial_hints = cfg.get_value("game", "tutorial_hints", tutorial_hints)
+	tutorial_done = cfg.get_value("game", "tutorial_done", tutorial_done)
 	fullscreen = cfg.get_value("display", "fullscreen", fullscreen)
 
 

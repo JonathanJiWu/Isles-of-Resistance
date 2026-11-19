@@ -475,6 +475,19 @@ func _build_overlays() -> void:
 # Refresh
 # --------------------------------------------------------------------------------------------
 
+## Controls the tutorial points at.
+func build_button(kind: String) -> Control:
+	return _build_buttons.get(kind)
+
+
+func coverage_button() -> Control:
+	return _cov_btn
+
+
+func end_turn_button() -> Control:
+	return _end_btn
+
+
 func refresh() -> void:
 	if st == null:
 		return
