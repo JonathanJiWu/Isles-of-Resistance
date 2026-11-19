@@ -241,7 +241,8 @@ func test_events_wellformed() -> void:
 	var st := GameState.create(31337, "commander")
 	var bot := TestBot.new(3)
 	var known_types := ["phase", "beat_start", "beat_end", "move", "spawn", "volley_start", "volley_end", "shot",
-		"attack", "damage", "destroyed", "exit", "log", "wave", "wave_cleared", "turn", "game_over", "strike", "recon", "intercept"]
+		"attack", "damage", "destroyed", "exit", "log", "wave", "wave_cleared", "turn", "game_over", "strike", "recon", "intercept",
+		"salvo", "ballistic", "salvo_warning"]
 	var depth_ok := true
 	var types_ok := true
 	for i in 30:
@@ -282,7 +283,7 @@ func _avg_mix(st: GameState, samples: int) -> Dictionary:
 	var mix := {}
 	var total := 0
 	for i in samples:
-		var plan := st.ai.plan_wave(st, 6)
+		var plan := st.ai.plan_wave(st, 4 + i % 8, true)
 		for k in plan["units"]:
 			mix[k] = mix.get(k, 0) + 1
 			total += 1
@@ -300,13 +301,19 @@ func test_adaptive_ai() -> void:
 	var flak_heavy := GameState.create(808, "veteran")
 	flak_heavy.supplies = 5000
 	_build_known(flak_heavy, "flak", 6)
+	sam_heavy.story.escalation = 2
+	flak_heavy.story.escalation = 2
 	var m_sam := _avg_mix(sam_heavy, 30)
 	var m_flak := _avg_mix(flak_heavy, 30)
-	var low_sam: float = m_sam.get("gunship", 0.0) + m_sam.get("missile", 0.0)
-	var low_flak: float = m_flak.get("gunship", 0.0) + m_flak.get("missile", 0.0)
-	check(low_sam > low_flak, "SAM-heavy defenses draw more low-altitude attackers (%.2f vs %.2f)" % [low_sam, low_flak])
+	var drain_sam: float = m_sam.get("decoy", 0.0) + m_sam.get("kitefang", 0.0) + m_sam.get("missile", 0.0)
+	var drain_flak: float = m_flak.get("decoy", 0.0) + m_flak.get("kitefang", 0.0) + m_flak.get("missile", 0.0)
+	check(drain_sam > drain_flak, "SAM-heavy defenses draw more decoys, anti-radiation drones and missiles (%.2f vs %.2f)" % [drain_sam, drain_flak])
 	check(m_flak.get("bomber", 0.0) > m_sam.get("bomber", 0.0), "flak-heavy defenses draw more high bombers (%.2f vs %.2f)" % [m_flak.get("bomber", 0.0), m_sam.get("bomber", 0.0)])
-	check(sam_heavy.ai.doctrine.contains("low"), "doctrine explains the shift: " + sam_heavy.ai.doctrine)
+	var real_plan: Dictionary = sam_heavy.ai.plan_wave(sam_heavy, 6)
+	check(String(real_plan["doctrine"]).contains("decoys") and sam_heavy.ai.doctrine == real_plan["doctrine"], "doctrine explains the shift: " + String(real_plan["doctrine"]))
+	var preview: Dictionary = flak_heavy.ai.plan_wave(flak_heavy, 7, true)
+	var again: Dictionary = flak_heavy.ai.plan_wave(flak_heavy, 7, true)
+	check(preview["units"] == again["units"] and flak_heavy.ai.last_sector == "", "wave previews are repeatable and leave the AI's memory untouched")
 
 	# Forest camouflage: unseen from 2 hexes, spotted from 1.
 	var st := GameState.create(4242, "veteran")

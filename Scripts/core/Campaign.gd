@@ -11,6 +11,13 @@ const DIRECTIVE_FRACTIONS := [0.1, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.92]
 
 var resolve := 60
 var escalation := 1               # 0 gray zone, 1 quarantine, 2 blockade, 3 strikes, 4 assault
+var pressure := 30                # escalation pressure 0-100 (see Defs.ESCALATION_THRESHOLDS)
+var last_situation_turn := -10
+var situations_seen := {}
+var killed_ids := {}
+var objective_seq := 0
+var sunk_landings := {}
+var situation_ctx := {}
 var ally := 50
 var flags := {}
 var choices := {}
@@ -74,7 +81,7 @@ func setup(st: GameState) -> void:
 
 
 func _reset_report() -> void:
-	report = {"kills": 0, "hits": 0, "cities_lost": [], "structures_lost": 0, "carriers_sunk": [], "wave": false}
+	report = {"kills": 0, "hits": 0, "cities_lost": [], "structures_lost": 0, "carriers_sunk": [], "wave": false, "city_hit": ""}
 
 
 func on_turn_start(st: GameState) -> void:
@@ -83,6 +90,9 @@ func on_turn_start(st: GameState) -> void:
 		_enter_act(st, a)
 	if pending == "" and next_directive < schedule.size() and st.wave >= int(schedule[next_directive][1]) and st.result == "":
 		pending = schedule[next_directive][0]
+	if pending == "" and st.result == "":
+		_maybe_situation(st)
+	update_objectives(st)
 	if st.turn > 1:
 		news = _make_news(st)
 	_reset_report()
@@ -171,6 +181,7 @@ func adjust(key: String, delta: int) -> void:
 
 func on_wave_launched(st: GameState, rep: Dictionary) -> void:
 	report["wave"] = true
+	add_pressure(st, int(st.diff().get("esc_rate", 6)))
 	for b in budget_mods:
 		b["waves"] -= 1
 	budget_mods = budget_mods.filter(func(b): return b["waves"] > 0)
@@ -187,11 +198,37 @@ func on_wave_launched(st: GameState, rep: Dictionary) -> void:
 
 func on_enemy_lost(st: GameState, e: Dictionary) -> void:
 	report["kills"] += 1
+	killed_ids[e["id"]] = true
 	unlock("kill:" + e["kind"])
 
 
 func on_hit() -> void:
 	report["hits"] += 1
+
+
+func on_city_hit(name: String) -> void:
+	report["city_hit"] = name
+
+
+func on_strike(st: GameState, target: Dictionary) -> void:
+	add_pressure(st, 2)
+
+
+func on_landing_destroyed(st: GameState, lg: Dictionary) -> void:
+	sunk_landings[lg["id"]] = true
+	adjust("resolve", 8)
+	add_pressure(st, -8)
+	if st.landings.is_empty():
+		adjust("resolve", 6)
+		adjust("ally", 6)
+		beats.append({"speaker": "ardent", "text": "Every landing group is on the bottom of the strait. The invasion has failed. Somewhere across the water, the Steering Council is rewriting its plans, and its history."})
+		set_flag(st, "invasion_repulsed")
+
+
+func on_landing_ashore(st: GameState, lg: Dictionary) -> void:
+	adjust("resolve", -10)
+	set_flag(st, "beachhead")
+	beats.append({"speaker": "sol", "text": "They're ashore at %s. My cousin's boat is under one of their landing craft. Nobody asked her either." % lg.get("target_name", "the beach")})
 
 
 func on_structure_destroyed(st: GameState, s: Dictionary) -> void:
@@ -215,6 +252,7 @@ func on_carrier_sunk(st: GameState, c: Dictionary) -> void:
 	report["carriers_sunk"].append(c.get("name", "a carrier"))
 	adjust("resolve", 8)
 	adjust("ally", 4)
+	add_pressure(st, 6)
 
 
 func on_carrier_seen(st: GameState) -> void:
@@ -242,6 +280,15 @@ func on_research(st: GameState, tech: String) -> void:
 
 ## Called at the end of the enemy phase. Emits one or two intercepted transmissions.
 func on_enemy_phase_end(st: GameState, events: Array) -> void:
+	for e in st.enemies.values():
+		if Defs.ENEMIES[e["kind"]]["role"] == "aew" and st.enemy_detected(e):
+			var have := false
+			for o in st.objectives:
+				if o["kind"] == "intercept_aew" and o["target"] == e["id"]:
+					have = true
+			if not have:
+				_add_objective(st, "intercept_aew", {"target": e["id"]})
+	update_objectives(st)
 	if report["kills"] > report["hits"] + 1:
 		adjust("resolve", 2)
 	elif report["hits"] > report["kills"] + 2:
@@ -296,6 +343,202 @@ func _pick_intercept(trigger: String) -> Array:
 
 
 # --------------------------------------------------------------------------------------------
+# Escalation ladder
+# --------------------------------------------------------------------------------------------
+
+func add_pressure(st: GameState, delta: int) -> void:
+	pressure = clampi(pressure + delta, 0, 100)
+	var lvl := escalation
+	var th: Array = Defs.ESCALATION_THRESHOLDS
+	while lvl < 4 and pressure >= int(th[lvl]):
+		lvl += 1
+	while lvl > 0 and pressure < int(th[lvl - 1]) - 8:
+		lvl -= 1
+	if lvl != escalation:
+		_set_escalation(st, lvl)
+
+
+func escalation_name() -> String:
+	return Defs.ESCALATION[clampi(escalation, 0, 4)]["name"]
+
+
+func _set_escalation(st: GameState, lvl: int) -> void:
+	var up := lvl > escalation
+	escalation = lvl
+	var data: Dictionary = Situations.LADDER[lvl]
+	var text: String = data["up"] if up else data["down"]
+	st.log_msg("ESCALATION: %s." % escalation_name().to_upper() if up else "De-escalation: %s." % escalation_name(), "bad" if up else "good")
+	if text != "":
+		beats.append({"speaker": data["speaker"], "text": text, "title": ("ESCALATION · " if up else "DE-ESCALATION · ") + escalation_name().to_upper()})
+	unlock("esc%d" % lvl)
+	news.push_front("LPB · STRAIT ALERT: %s" % escalation_name().to_upper())
+	if lvl == 2 and up and st.energy >= Defs.ENERGY_DAYS:
+		st.log_msg("Blockade: the LNG reserve (%d days) now drains every turn. Convoys and decisions can refill it." % st.energy, "warn")
+	if lvl == 4:
+		st.spawn_landings()
+		for lg in st.landings.values():
+			_add_objective(st, "stop_landing", {"target": lg["id"], "name": lg["name"], "city": lg["target_name"]})
+
+
+# --------------------------------------------------------------------------------------------
+# Situations and objectives
+# --------------------------------------------------------------------------------------------
+
+func _maybe_situation(st: GameState) -> void:
+	if st.turn < 3:
+		return
+	var forced := ""
+	if report["kills"] >= 3 and _eligible(st, "downed_pilot"):
+		forced = "downed_pilot"
+	elif report["city_hit"] != "" and _eligible(st, "rescue"):
+		forced = "rescue"
+	elif st.escalation() >= 2 and st.energy <= 0 and _eligible(st, "blackout"):
+		forced = "blackout"
+	if forced == "" and (st.turn - last_situation_turn < 2 or rng.randf() > 0.45):
+		return
+	var pick := forced
+	if pick == "":
+		var pool: Array = []
+		for sid in Situations.SITUATIONS:
+			var d: Dictionary = Situations.SITUATIONS[sid]
+			if d.has("trigger") or not _eligible(st, sid):
+				continue
+			pool.append(sid)
+		if pool.is_empty():
+			return
+		pick = pool[rng.randi_range(0, pool.size() - 1)]
+	_start_situation(st, pick)
+
+
+func _eligible(st: GameState, sid: String) -> bool:
+	var d: Dictionary = Situations.SITUATIONS[sid]
+	var esc: Array = d.get("esc", [0, 4])
+	if escalation < int(esc[0]) or escalation > int(esc[1]):
+		return false
+	if situations_seen.get(sid, 0) >= int(d.get("max_times", 2)):
+		return false
+	if d.has("seasons") and not (st.env.get("theater", {}).get("season", "") in d["seasons"]):
+		return false
+	if d.has("requires_kind") and st.structure_of_kind(d["requires_kind"]).is_empty():
+		return false
+	if d.get("requires_city", "") == "coastal" and _coastal_city(st).is_empty():
+		return false
+	return true
+
+
+func _coastal_city(st: GameState) -> Dictionary:
+	for s in st.structures.values():
+		if s["kind"] == "city" and not s.get("foundry", false) and st.is_coastal(s["pos"]):
+			return s
+	return {}
+
+
+func _start_situation(st: GameState, sid: String) -> void:
+	var d: Dictionary = Situations.SITUATIONS[sid]
+	pending = sid
+	last_situation_turn = st.turn
+	situations_seen[sid] = situations_seen.get(sid, 0) + 1
+	var ctx := {}
+	var city: Dictionary = _coastal_city(st) if d.get("requires_city", "") == "coastal" else {}
+	if city.is_empty():
+		var cities: Array = []
+		for s in st.structures.values():
+			if s["kind"] == "city":
+				cities.append(s)
+		if not cities.is_empty():
+			city = cities[rng.randi_range(0, cities.size() - 1)]
+	if report["city_hit"] != "" and sid == "rescue":
+		ctx["city"] = report["city_hit"]
+	else:
+		ctx["city"] = city.get("name", "Saltmere")
+	ctx["city_id"] = city.get("id", -1)
+	var cs := st.structure_of_kind("cable")
+	ctx["cable"] = cs.get("name", "the cable landing")
+	ctx["confidence"] = GameState.confidence_label(st.intel_confidence())
+	situation_ctx = ctx
+	if d.has("on_trigger"):
+		_apply(st, d["on_trigger"])
+	st.log_msg("Situation · %s" % d["title"], "intel")
+
+
+func fill_text(text: String) -> String:
+	return text.format(situation_ctx)
+
+
+func _add_objective(st: GameState, tid: String, ctx: Dictionary) -> void:
+	var tmpl: Dictionary = Situations.OBJECTIVES[tid]
+	objective_seq += 1
+	var deadline: int = st.turn + int(tmpl.get("turns", 0))
+	var o := {"id": objective_seq, "kind": tid, "target": ctx.get("target", -1), "deadline": deadline,
+		"status": "active", "ctx": ctx, "start_hp": -1}
+	var tgt: Dictionary = st.structures.get(o["target"], {})
+	if not tgt.is_empty():
+		o["start_hp"] = tgt["hp"]
+	st.objectives.append(o)
+	st.log_msg("New objective: %s." % objective_title(st, o), "intel")
+
+
+func objective_title(st: GameState, o: Dictionary) -> String:
+	var tmpl: Dictionary = Situations.OBJECTIVES[o["kind"]]
+	return String(tmpl["title"]).format(_objective_ctx(st, o))
+
+
+func objective_detail(st: GameState, o: Dictionary) -> String:
+	var tmpl: Dictionary = Situations.OBJECTIVES[o["kind"]]
+	return String(tmpl["detail"]).format(_objective_ctx(st, o))
+
+
+func _objective_ctx(st: GameState, o: Dictionary) -> Dictionary:
+	var c: Dictionary = o["ctx"].duplicate()
+	c["deadline"] = o["deadline"]
+	if o["kind"] == "stop_landing":
+		var lg: Dictionary = st.landings.get(o["target"], {})
+		c["eta"] = ("%d turn%s" % [st.landing_eta(lg), "" if st.landing_eta(lg) == 1 else "s"]) if not lg.is_empty() else "-"
+	return c
+
+
+func active_objectives(st: GameState) -> Array:
+	return st.objectives.filter(func(o): return o["status"] == "active")
+
+
+## Checks every active objective. Called at the start of each turn and after each enemy phase.
+func update_objectives(st: GameState) -> void:
+	for o in st.objectives:
+		if o["status"] != "active":
+			continue
+		var outcome := ""
+		match o["kind"]:
+			"evacuate":
+				var city: Dictionary = st.structures.get(o["target"], {})
+				if city.is_empty() or city["hp"] < int(o["start_hp"]):
+					outcome = "failed"
+				elif st.turn >= int(o["deadline"]):
+					outcome = "done"
+			"intercept_aew":
+				if killed_ids.has(o["target"]):
+					outcome = "done"
+				elif not st.enemies.has(o["target"]) or st.turn > int(o["deadline"]):
+					outcome = "failed"
+			"stop_landing":
+				if not st.landings.has(o["target"]):
+					outcome = "done" if _landing_sunk(st, o["target"]) else "failed"
+		if outcome == "":
+			continue
+		o["status"] = outcome
+		var tmpl: Dictionary = Situations.OBJECTIVES[o["kind"]]
+		if outcome == "done":
+			st.log_msg("Objective complete: %s." % objective_title(st, o), "good")
+			_apply(st, tmpl.get("reward", {}))
+		else:
+			st.log_msg("Objective failed: %s." % objective_title(st, o), "bad")
+			_apply(st, tmpl.get("penalty", {}))
+
+
+func _landing_sunk(st: GameState, id: int) -> bool:
+	return sunk_landings.has(id)
+
+
+# --------------------------------------------------------------------------------------------
 # AI hooks
 # --------------------------------------------------------------------------------------------
 
@@ -312,10 +555,18 @@ func allow_new_types() -> bool:
 # --------------------------------------------------------------------------------------------
 
 func pending_data() -> Dictionary:
-	return Lore.DIRECTIVES.get(pending, {})
+	if Lore.DIRECTIVES.has(pending):
+		return Lore.DIRECTIVES[pending]
+	return Situations.SITUATIONS.get(pending, {})
 
 
-func option_check(st: GameState, effects: Dictionary) -> String:
+func pending_is_situation() -> bool:
+	return pending != "" and Situations.SITUATIONS.has(pending)
+
+
+func option_check(st: GameState, effects: Dictionary, option: Dictionary = {}) -> String:
+	if option.has("requires_flag") and not flags.has(option["requires_flag"]):
+		return "Not available"
 	if effects.get("supplies", 0) < 0 and st.supplies < -int(effects["supplies"]):
 		return "Needs %d supplies" % -int(effects["supplies"])
 	if effects.get("rp", 0) < 0 and st.rp < -int(effects["rp"]):
@@ -355,6 +606,32 @@ static func effect_lines(effects: Dictionary) -> Array:
 		out.append("+%d supplies per turn" % int(effects["convoy"]))
 	if effects.has("gamble"):
 		out.append("%d%% chance it works" % int(round(float(effects["gamble"]["chance"]) * 100.0)))
+	if effects.has("escalation"):
+		var v: int = effects["escalation"]
+		out.append(("Escalation +%d" % v) if v > 0 else ("De-escalation %d" % v))
+	if effects.has("interceptors"):
+		out.append("%+d interceptors" % int(effects["interceptors"]))
+	if effects.has("energy"):
+		out.append("%+d days of LNG" % int(effects["energy"]))
+	if effects.has("comms_set"):
+		var c: int = effects["comms_set"]
+		out.append("Comms restored" if c <= 0 else "Comms back in %d turn%s" % [c, "" if c == 1 else "s"])
+	if effects.has("brownout"):
+		out.append("Rolling blackouts for %d turns" % int(effects["brownout"]))
+	if effects.has("confidence"):
+		out.append("Better intelligence for %d turns" % int(effects["confidence"]))
+	if effects.has("delay_wave"):
+		out.append("Next raid delayed %d turn" % int(effects["delay_wave"]))
+	if effects.has("heal"):
+		out.append("+%d HP to every site" % int(effects["heal"]))
+	if effects.has("forget"):
+		out.append("Enemy loses track of %d sites" % int(effects["forget"]))
+	if effects.has("storm_damage"):
+		out.append("%d sites damaged" % int(effects["storm_damage"]))
+	if effects.has("crews_busy"):
+		out.append("No repairs this turn")
+	if effects.has("objective"):
+		out.append("New objective")
 	return out
 
 
@@ -366,14 +643,16 @@ func choose(st: GameState, idx: int) -> bool:
 	if idx < 0 or idx >= opts.size():
 		return false
 	var effects: Dictionary = opts[idx]["effects"]
-	if option_check(st, effects) != "":
+	if option_check(st, effects, opts[idx]) != "":
 		return false
 	var id := pending
+	var situation := pending_is_situation()
 	choices[id] = idx
 	last_decision = "%s:%d" % [id, idx]
 	pending = ""
-	next_directive += 1
-	st.log_msg("Directive · %s: %s." % [d["title"], opts[idx]["label"]], "intel")
+	if not situation:
+		next_directive += 1
+	st.log_msg("%s · %s: %s." % ["Situation" if situation else "Directive", d["title"], opts[idx]["label"]], "intel")
 	_apply(st, effects)
 	if Lore.DECISION_NEWS.has(last_decision):
 		news.push_front(Lore.DECISION_NEWS[last_decision])
@@ -416,6 +695,46 @@ func _apply(st: GameState, e: Dictionary) -> void:
 		set_flag(st, f)
 	if e.get("glass", "") == "cracked":
 		crack_glass(st)
+	if e.has("escalation"):
+		add_pressure(st, int(e["escalation"]))
+	if e.has("interceptors"):
+		st.interceptors = clampi(st.interceptors + int(e["interceptors"]), 0, Defs.INTERCEPTOR_CAP)
+	if e.has("energy"):
+		st.energy = clampi(st.energy + int(e["energy"]), 0, 20)
+	if e.has("comms"):
+		st.comms_turns = maxi(st.comms_turns, int(e["comms"]))
+	if e.has("comms_set"):
+		st.comms_turns = maxi(0, int(e["comms_set"]))
+	if e.has("brownout"):
+		st.brownout_turns = maxi(st.brownout_turns, int(e["brownout"]))
+	if e.has("confidence"):
+		st.confidence_turns = maxi(st.confidence_turns, int(e["confidence"]))
+	if e.has("delay_wave"):
+		st.next_wave_turn += int(e["delay_wave"])
+	if e.has("heal"):
+		for s in st.structures.values():
+			s["hp"] = mini(s["max_hp"], s["hp"] + int(e["heal"]))
+	if e.has("forget"):
+		var n := 0
+		for id in st.ai.known.keys():
+			var s: Dictionary = st.structures.get(id, {})
+			if s.is_empty() or s["kind"] in ["capital", "city", "power", "cable"]:
+				continue
+			st.ai.known.erase(id)
+			n += 1
+			if n >= int(e["forget"]):
+				break
+	if e.has("storm_damage"):
+		var sites: Array = st.structures.values().filter(func(s): return not (s["kind"] in ["capital", "city"]))
+		for i in mini(int(e["storm_damage"]), sites.size()):
+			var s: Dictionary = sites[rng.randi_range(0, sites.size() - 1)]
+			s["hp"] = maxi(1, s["hp"] - 12)
+	if e.has("storm_next"):
+		st.forced_weather = "storm"
+	if e.has("crews_busy"):
+		st.repairs_used = st.repair_crews()
+	if e.has("objective") and e["objective"] == "evacuate":
+		_add_objective(st, "evacuate", {"target": situation_ctx.get("city_id", -1), "city": situation_ctx.get("city", "the city")})
 
 
 func set_flag(st: GameState, f: String) -> void:
@@ -610,7 +929,8 @@ func ending(st: GameState) -> Dictionary:
 # Persistence
 # --------------------------------------------------------------------------------------------
 
-const _FIELDS := ["resolve", "escalation", "ally", "flags", "choices", "schedule", "next_directive", "pending", "budget_mods",
+const _FIELDS := ["resolve", "escalation", "pressure", "last_situation_turn", "situations_seen", "killed_ids",
+	"objective_seq", "sunk_landings", "situation_ctx", "ally", "flags", "choices", "schedule", "next_directive", "pending", "budget_mods",
 	"glass", "foundry_id", "foundry_mult", "accuracy_bonus", "strike_lock_until", "no_new_types", "convoy",
 	"reveal_next", "act", "codex", "codex_unseen", "news", "beats", "ops_ready", "merge_used_wave", "shipments",
 	"last_decision", "used_intercepts", "report"]

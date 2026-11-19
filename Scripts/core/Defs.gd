@@ -15,6 +15,16 @@ const AIR_STRIKE_COST := 30
 const AIR_STRIKE_RANGE := 10
 const MISSILE_COST := 10
 const MISSILE_RANGE := 12
+const RELOCATE_COST := 10
+const RELOCATE_RANGE := 2
+const PROCURE_COST := 15
+const PROCURE_AMOUNT := 3
+const INTERCEPTOR_CAP := 60
+const BMD_COST := 2               # interceptors spent per attempt on a ballistic missile
+const REPAIR_CREWS := 2
+const ENERGY_DAYS := 12           # LNG reserve when the blockade starts (CSIS: ~11-12 days)
+const LANDING_SPEED := 2
+const BOAT_RANGE := 1
 
 const PLAYER_COLOR := Color(0.31, 0.82, 0.77)
 const PLAYER_DARK := Color(0.11, 0.44, 0.47)
@@ -80,11 +90,11 @@ const STRUCTURES := {
 	"flak": {
 		"name": "Flak Battery", "build": true, "cost": 30, "hp": 40, "vision": 2,
 		"range": 1, "shots": 2, "dmg_low": 12, "dmg_high": 6, "acc": 0.75, "weapon": "flak", "value": 3,
-		"desc": "Rapid-fire 35mm guns. Deadly against low-altitude aircraft, weak against high-flying bombers. The barrels are older than the gunners.",
+		"desc": "Rapid-fire 35mm guns: cheap to fire, deadly against drones, loitering munitions, helicopters and sea-skimming missiles, weak against anything flying high. The barrels are older than the gunners.",
 	},
 	"radar": {
 		"name": "Radar Station", "build": true, "cost": 40, "hp": 30, "vision": 4, "value": 5, "mountain_ok": true,
-		"desc": "Wide-area vision. Your weapons gain +15% accuracy against targets inside radar coverage. Rule one: the radar is never wrong.",
+		"desc": "Wide-area vision. Your weapons gain +15% accuracy against targets inside radar coverage. It is also an emitter: anti-radiation drones and stealth fighters hunt it. Rule one: the radar is never wrong.",
 	},
 	"harbor": {
 		"name": "Harbor", "build": true, "cost": 45, "hp": 40, "vision": 2, "income": 6, "value": 5, "coastal": true,
@@ -96,12 +106,12 @@ const STRUCTURES := {
 	},
 	"airbase": {
 		"name": "Airbase", "build": true, "cost": 70, "hp": 60, "vision": 2, "value": 6,
-		"desc": "Trains Kestrel interceptor squadrons and launches air strikes on enemy carriers within 10 hexes.",
+		"desc": "Trains Kestrel interceptor squadrons and launches air strikes on carriers and landing groups within 10 hexes. If the runway is cratered (below half HP) its squadrons are grounded until it is repaired.",
 	},
 	"sam": {
 		"name": "Longbow SAM Site", "build": true, "cost": 60, "hp": 35, "vision": 2, "tech": "guided_missiles",
 		"range": 3, "shots": 1, "dmg_low": 14, "dmg_high": 32, "acc": 0.85, "weapon": "sam", "value": 4,
-		"desc": "Halberd-licensed guided missiles. Devastating against high-altitude bombers. Needs radar to see its full range.",
+		"desc": "Halberd-licensed long-range missiles, devastating against high-flying aircraft. Every shot spends one interceptor from the national stockpile, and cheap decoys are built to drain it. Mobile: relocate it to hide from enemy planners.",
 	},
 	"bunker": {
 		"name": "Shelter Network", "build": true, "cost": 35, "hp": 60, "vision": 1, "tech": "hardened_shelters", "value": 2,
@@ -113,16 +123,23 @@ const STRUCTURES := {
 	},
 	"missile": {
 		"name": "Missile Battery", "build": true, "cost": 80, "hp": 40, "vision": 1, "tech": "cruise_missiles", "value": 6,
-		"desc": "Launches cruise missiles at spotted enemy carriers within 12 hexes (10 supplies per launch).",
+		"desc": "Truck-mounted anti-ship missiles: strike spotted carriers and landing groups within 12 hexes (10 supplies per launch). Mobile launchers survive by moving: relocate after firing.",
 	},
 	"laser": {
-		"name": "Lumen Laser", "build": true, "cost": 110, "hp": 45, "vision": 2, "tech": "directed_energy",
-		"range": 2, "shots": 3, "dmg_low": 18, "dmg_high": 18, "acc": 0.95, "weapon": "laser", "value": 4,
-		"desc": "Halberd Dynamics directed-energy turret. Strikes any altitude with near-perfect accuracy. The firing key is a subscription.",
+		"name": "Lumen Laser", "build": true, "cost": 90, "hp": 45, "vision": 2, "tech": "directed_energy",
+		"range": 1, "shots": 4, "dmg_low": 18, "dmg_high": 9, "acc": 0.9, "weapon": "laser", "value": 4,
+		"desc": "Halberd Dynamics directed-energy point defense: almost free per shot and superb against drones, decoys and missiles, but short-ranged, weaker against big aircraft, degraded by rain, fog and haze, and dark when the grid fails. The firing key is a subscription.",
+	},
+	"ewar": {
+		"name": "Cicada EW Station", "build": true, "cost": 45, "hp": 30, "vision": 2, "tech": "electronic_warfare", "value": 4,
+		"aura": 2,
+		"desc": "Jams the links and navigation of drones, decoys and loitering munitions within 2 hexes (each may lose control every step) and throws incoming missiles off by 20%. An emitter: it gives its position away. Mobile.",
 	},
 }
 
-const BUILD_ORDER := ["flak", "radar", "harbor", "lab", "airbase", "sam", "bunker", "decoy", "missile", "laser"]
+const BUILD_ORDER := ["flak", "radar", "harbor", "lab", "airbase", "sam", "bunker", "decoy", "missile", "laser", "ewar"]
+## Structures that can relocate (mobile launchers and emitters).
+const MOBILE := ["sam", "missile", "ewar"]
 
 const UNITS := {
 	"interceptor": {
@@ -136,40 +153,85 @@ const UNITS := {
 		"from": "harbor", "air": false, "max_per": 2,
 		"desc": "Converted coast guard hull with AA guns and long-range sensors. Sails coastal and deep water.",
 	},
+	"droneboat": {
+		"name": "Swiftlet Drone Boats", "cost": 25, "hp": 12, "move": 4, "vision": 2, "tech": "uncrewed_systems",
+		"from": "harbor", "air": false, "max_per": 3, "strike_dmg": 34,
+		"desc": "A flotilla of explosive uncrewed boats. One-way attack on a landing group or carrier within 1 hex; the flotilla is spent.",
+	},
 }
 
+## Enemy aircraft and munitions. role: scout | decoy | seek | fighter | jammer | aew | standoff | missile |
+## strike | sead. min_escalation gates a type by the escalation ladder (see ESCALATION).
 const ENEMIES := {
 	"drone": {
-		"name": "Magpie Recon Drone", "hp": 10, "speed": 6, "alt": "low", "dmg": 0, "acc": 0.0, "vision": 3,
-		"cost": 2, "fuel": 4, "score": 10, "role": "scout", "threat": 1, "attack_range": 0,
-		"desc": "Swarm-built scout running firmware 0.9.3-beta. Reveals your defenses to Eastern Theater planners.",
+		"name": "Magpie ISR Drone", "hp": 14, "speed": 5, "alt": "high", "dmg": 0, "acc": 0.0, "vision": 4,
+		"cost": 2, "fuel": 6, "score": 15, "role": "scout", "threat": 2, "attack_range": 0,
+		"desc": "High-altitude, long-endurance reconnaissance drone. Maps your defenses for later waves. Cheap to send, expensive to ignore: firmware 0.9.3-beta.",
+	},
+	"decoy": {
+		"name": "Paper Lantern", "hp": 12, "speed": 6, "alt": "high", "dmg": 16, "acc": 0.55, "vision": 0,
+		"cost": 1, "fuel": 4, "score": 8, "role": "decoy", "threat": 5, "attack_range": 0, "min_escalation": 1,
+		"desc": "A retired jet fighter converted into an expendable drone with a small warhead. On radar it looks like a bomber; its real job is to make you spend interceptors.",
+	},
+	"kitefang": {
+		"name": "Kitefang Loitering Munition", "hp": 10, "speed": 4, "alt": "low", "dmg": 22, "acc": 0.85, "vision": 2,
+		"cost": 2, "fuel": 5, "score": 12, "role": "seek", "threat": 4, "attack_range": 0, "min_escalation": 1,
+		"desc": "Anti-radiation loitering munition. Homes on emitters: radars, SAM fire-control and EW stations.",
 	},
 	"fighter": {
 		"name": "Shrike Strike Fighter", "hp": 26, "speed": 5, "alt": "high", "dmg": 8, "air_dmg": 14, "acc": 0.75, "vision": 2,
 		"cost": 4, "fuel": 5, "score": 20, "role": "fighter", "threat": 3, "attack_range": 1,
-		"desc": "Hunts interceptors and frigates and escorts bombers. Strafes light targets.",
+		"desc": "Multirole fighter. Hunts interceptors and corvettes, escorts the strike package and strafes light targets.",
 	},
-	"gunship": {
-		"name": "Mantis Gunship", "hp": 32, "speed": 4, "alt": "low", "dmg": 14, "acc": 0.8, "vision": 2, "ammo": 2,
-		"cost": 4, "fuel": 6, "score": 25, "role": "sead", "threat": 4, "attack_range": 1,
-		"desc": "Carrier-borne attack helicopter that hunts your air defenses, especially the deadliest ones.",
+	"jammer": {
+		"name": "Static EW Jet", "hp": 28, "speed": 5, "alt": "high", "dmg": 0, "acc": 0.0, "vision": 3,
+		"cost": 4, "fuel": 5, "score": 35, "role": "jammer", "threat": 5, "attack_range": 0, "min_escalation": 2,
+		"desc": "Electronic-warfare jet escorting the raid. Defenses within 2 hexes of it lose their radar bonus and 20% accuracy.",
+	},
+	"aew": {
+		"name": "Skylark AEW&C", "hp": 40, "speed": 3, "alt": "high", "dmg": 0, "acc": 0.0, "vision": 6,
+		"cost": 5, "fuel": 10, "score": 60, "role": "aew", "threat": 3, "attack_range": 0, "min_escalation": 1, "min_wave": 2,
+		"desc": "Airborne early warning radar. Orbits beyond your missiles, reveals your sites to the raid and adds 10% to every enemy attack while it flies. A priority target for interceptors.",
 	},
 	"bomber": {
-		"name": "Monsoon Heavy Bomber", "hp": 48, "speed": 3, "alt": "high", "dmg": 32, "splash": 8, "acc": 0.85, "vision": 1,
-		"gunners": 4, "cost": 6, "fuel": 8, "score": 40, "role": "strike", "threat": 5, "attack_range": 0,
-		"desc": "The workhorse of the Quarantine: slow, armored, with defensive gunners and a devastating payload.",
+		"name": "Monsoon Missile Bomber", "hp": 48, "speed": 3, "alt": "high", "dmg": 0, "acc": 0.85, "vision": 1,
+		"gunners": 4, "salvo": 2, "cost": 6, "fuel": 8, "score": 40, "role": "standoff", "threat": 5, "attack_range": 4,
+		"desc": "Old, slow and still the workhorse: it never overflies your guns. It launches two Needle cruise missiles from 4 hexes out and turns for home. Kill it before it gets there.",
 	},
 	"missile": {
-		"name": "Needle Sea-Skimmer", "hp": 8, "speed": 7, "alt": "low", "dmg": 40, "acc": 0.9, "vision": 0,
-		"cost": 3, "fuel": 4, "score": 15, "role": "missile", "threat": 5, "attack_range": 0, "min_wave": 4,
-		"desc": "Sea-skimming cruise missile. Very fast and fragile; detonates on impact.",
+		"name": "Needle Cruise Missile", "hp": 8, "speed": 7, "alt": "low", "dmg": 28, "acc": 0.9, "vision": 0,
+		"cost": 3, "fuel": 4, "score": 15, "role": "missile", "threat": 5, "attack_range": 0, "min_escalation": 2,
+		"desc": "Sea-skimming cruise missile, launched from bombers, ships and mainland batteries. Very fast and fragile; detonates on impact.",
 	},
 	"stealth": {
-		"name": "Inkwash Stealth Bomber", "hp": 36, "speed": 4, "alt": "high", "dmg": 36, "splash": 6, "acc": 0.9, "vision": 1,
-		"stealth": true, "cost": 8, "fuel": 7, "score": 60, "role": "strike", "threat": 6, "attack_range": 0, "min_wave": 6,
-		"desc": "Quieter than the propaganda. Invisible unless detected by Phased Array radar or flying next to your forces.",
+		"name": "Inkwash Stealth Fighter", "hp": 30, "speed": 5, "alt": "high", "dmg": 24, "acc": 0.9, "vision": 2,
+		"stealth": true, "cost": 7, "fuel": 6, "score": 55, "role": "strike", "hunts_emitters": true, "threat": 6, "attack_range": 0,
+		"min_escalation": 2, "min_wave": 5,
+		"desc": "Low-observable strike fighter that goes after radars and SAM sites. Invisible unless Phased Array radar covers it or it flies next to your forces.",
+	},
+	"gunship": {
+		"name": "Mantis Attack Helicopter", "hp": 32, "speed": 4, "alt": "low", "dmg": 14, "acc": 0.8, "vision": 2, "ammo": 2,
+		"cost": 4, "fuel": 6, "score": 25, "role": "sead", "threat": 4, "attack_range": 1, "naval_only": true,
+		"desc": "Flies from the landing groups' assault ships once they are close to shore. Short-ranged and low; hunts air defenses near the beaches.",
 	},
 }
+
+## Amphibious task group (assault ship, landing ships, escorts), used at escalation 4.
+const LANDING := {
+	"name": "Landing Group", "vision": 2,
+	"desc": "Assault ships and landing craft with escorts, crossing the strait toward a beach. If it lands, the city it targets falls. Strike it with Missile Batteries, air strikes or drone boats before it arrives.",
+}
+
+## Escalation ladder. budget: wave budget multiplier; civil/infra: how much the enemy values cities and
+## strategic infrastructure; interval: turns between waves.
+const ESCALATION := [
+	{"name": "Gray Zone", "budget": 0.8, "civil": 0.15, "infra": 0.3, "interval": 4, "color": Color(0.55, 0.75, 1.0)},
+	{"name": "Quarantine", "budget": 1.0, "civil": 0.55, "infra": 0.6, "interval": 3, "color": Color(1.0, 0.82, 0.4)},
+	{"name": "Blockade", "budget": 1.05, "civil": 0.8, "infra": 1.4, "interval": 3, "color": Color(1.0, 0.6, 0.3)},
+	{"name": "Strikes", "budget": 1.1, "civil": 1.0, "infra": 1.3, "interval": 3, "color": Color(1.0, 0.42, 0.42)},
+	{"name": "Assault", "budget": 1.15, "civil": 1.1, "infra": 1.1, "interval": 2, "color": Color(1.0, 0.25, 0.35)},
+]
+const ESCALATION_THRESHOLDS := [18, 42, 64, 84]   # pressure needed for levels 1..4
 
 const CARRIER := {
 	"name": "Harmony-class Carrier", "vision": 3,
@@ -185,7 +247,7 @@ const TECHS := {
 	"guided_missiles": {"name": "Guided Missiles", "cost": 30, "tier": 0, "row": 2, "req": [],
 		"desc": "Unlocks Longbow SAM Sites: long-range high-altitude defense."},
 	"logistics": {"name": "Logistics Network", "cost": 30, "tier": 0, "row": 3, "req": [],
-		"desc": "+20% supply income. Repairs cost half."},
+		"desc": "+20% supply income. Repairs cost half, and a third repair crew joins."},
 	"hardened_shelters": {"name": "Hardened Shelters", "cost": 25, "tier": 0, "row": 4, "req": [],
 		"desc": "Unlocks Shelter Networks. Capital and Cities gain +25% max HP."},
 	"coastwatchers": {"name": "Coastwatchers", "cost": 25, "tier": 0, "row": 5, "req": [],
@@ -201,35 +263,41 @@ const TECHS := {
 	"deception": {"name": "Deception Tactics", "cost": 25, "tier": 1, "row": 4, "req": ["hardened_shelters"],
 		"desc": "Unlocks Decoy Sites that lure enemy bombers away from real targets."},
 	"satellite_uplink": {"name": "Satellite Uplink", "cost": 60, "tier": 2, "row": 0, "req": ["phased_array"],
-		"desc": "Brightline Orbital imagery: enemy carriers are permanently revealed and wave intel reports enemy composition."},
+		"desc": "Brightline Orbital imagery: enemy carriers and landing groups are permanently revealed, and intelligence forecasts improve."},
 	"directed_energy": {"name": "Directed Energy", "cost": 80, "tier": 2, "row": 1, "req": ["phased_array", "proximity_fuzes"],
-		"desc": "Unlocks Lumen Laser turrets, licensed from Halberd Dynamics. Read the EULA."},
+		"desc": "Unlocks Lumen Laser point-defense turrets, licensed from Halberd Dynamics: cheap shots against drones and missiles. Read the EULA."},
 	"cruise_missiles": {"name": "Cruise Missiles", "cost": 55, "tier": 2, "row": 2, "req": ["guided_missiles", "logistics"],
-		"desc": "Unlocks Coastal Missile Batteries for long-range strikes on enemy carriers."},
+		"desc": "Unlocks Missile Batteries for long-range strikes on enemy carriers and landing groups."},
+	"electronic_warfare": {"name": "Electronic Warfare", "cost": 35, "tier": 1, "row": 5, "req": ["improved_radar"],
+		"desc": "Unlocks Cicada EW Stations: jam drones, decoys and loitering munitions, and spoil missile guidance."},
+	"hit_to_kill": {"name": "Hit-to-Kill Interceptors", "cost": 55, "tier": 2, "row": 4, "req": ["guided_missiles", "phased_array"],
+		"desc": "Longbow SAMs can try to intercept ballistic missiles (2 interceptors per attempt) and gain +10% accuracy against cruise missiles."},
+	"uncrewed_systems": {"name": "Uncrewed Systems", "cost": 40, "tier": 2, "row": 5, "req": ["naval_aa"],
+		"desc": "Harbors build Swiftlet drone boats: cheap one-way attack craft against landing groups and carriers."},
 	"precision_strikes": {"name": "Precision Strikes", "cost": 50, "tier": 2, "row": 3, "req": ["jet_interceptors"],
-		"desc": "Air strikes and cruise missiles deal +50% damage to carriers."},
+		"desc": "Air strikes and cruise missiles deal +50% damage to carriers and landing groups."},
 }
 
 ## Enemy wave budget for wave w = (base + growth * (w - 1)), scaled down as carriers are sunk.
 const DIFFICULTY := {
 	"recruit": {
 		"name": "Recruit", "supplies": 150, "base": 9.0, "growth": 5.0, "waves": 8, "carriers": 2, "carrier_hp": 120,
-		"cities": 4, "score_mult": 0.75,
+		"cities": 4, "interceptors": 30, "esc_rate": 4, "landings": 1, "landing_hp": 100, "salvo": 2, "score_mult": 0.75,
 		"desc": "8 waves of light raids and generous supplies. Recommended for your first campaign.",
 	},
 	"regular": {
 		"name": "Regular", "supplies": 130, "base": 16.5, "growth": 9.1, "waves": 10, "carriers": 2, "carrier_hp": 140,
-		"cities": 4, "score_mult": 1.0,
+		"cities": 4, "interceptors": 24, "esc_rate": 6, "landings": 1, "landing_hp": 130, "salvo": 3, "score_mult": 1.0,
 		"desc": "10 waves. A fair fight once you know your flak from your SAMs.",
 	},
 	"veteran": {
 		"name": "Veteran", "supplies": 110, "base": 20.0, "growth": 11.0, "waves": 10, "carriers": 2, "carrier_hp": 160,
-		"cities": 4, "score_mult": 1.25,
+		"cities": 4, "interceptors": 20, "esc_rate": 7, "landings": 2, "landing_hp": 150, "salvo": 3, "score_mult": 1.25,
 		"desc": "10 heavier waves. The adaptive enemy punishes one-dimensional defenses.",
 	},
 	"commander": {
 		"name": "Commander", "supplies": 95, "base": 21.5, "growth": 11.5, "waves": 12, "carriers": 3, "carrier_hp": 180,
-		"cities": 4, "score_mult": 1.5,
+		"cities": 4, "interceptors": 16, "esc_rate": 8, "landings": 2, "landing_hp": 170, "salvo": 4, "score_mult": 1.5,
 		"desc": "12 waves and three carriers. The enemy commits everything. Score x1.5.",
 	},
 }

@@ -44,11 +44,25 @@ var capital_id := -1
 var env := {}                   # generated scenery and the campaign's theater (see EnvGen)
 var weather := "clear"
 var weather_rng := RandomNumberGenerator.new()
+var interceptors := 0           # national stockpile of SAM interceptors
+var landings := {}              # id -> landing group (escalation 4)
+var objectives: Array = []      # timed objectives (see Campaign)
+var forecast := {}              # intelligence forecast for the next wave
+var energy := Defs.ENERGY_DAYS  # LNG reserve in days; drains under blockade
+var brownout_turns := 0         # imposed rolling blackouts
+var comms_turns := 0            # communications degraded (cable cuts)
+var confidence_turns := 0       # temporary intelligence bonus
+var repairs_used := 0
+var procured_turn := -1
+var landings_spawned := false
+var intel_rng := RandomNumberGenerator.new()
+var forced_weather := ""        # a forecast storm that will arrive next turn
 
 var _sink = null                # event array receiving log events while resolving
 var _phase_kills := 0
 var _phase_hits := 0
 var _attacker_wave := 0
+var _dry_logged := false
 
 
 # --------------------------------------------------------------------------------------------
@@ -106,6 +120,8 @@ func _setup(p_seed: int, p_difficulty: String) -> void:
 		carriers[cid] = {"id": cid, "pos": p, "hp": d["carrier_hp"], "max_hp": d["carrier_hp"],
 			"seen_pos": Hex.INVALID, "seen_turn": -99}
 	supplies = d["supplies"]
+	interceptors = d["interceptors"]
+	intel_rng.seed = p_seed * 29 + 11
 	waves_total = d["waves"]
 	stats = {"kills": {}, "kills_total": 0, "structures_lost": 0, "cities_lost": 0, "units_lost": 0,
 		"built": 0, "shots": 0, "hits": 0, "damage_taken": 0, "carriers_sunk": 0, "techs": 0,
@@ -299,9 +315,13 @@ func s_vision(s: Dictionary) -> int:
 			v += 2
 		if t == "mountain":
 			v += 2
+		if brownout():
+			v -= 1
 	if has_tech("coastwatchers"):
 		v += 1
-	return v
+	if weather == "fog":
+		v -= 1
+	return maxi(v, 1)
 
 
 func weapon_damage(def: Dictionary, alt: String) -> int:
@@ -321,7 +341,8 @@ func u_move(u: Dictionary) -> int:
 
 
 func u_vision(u: Dictionary) -> int:
-	return int(Defs.UNITS[u["kind"]]["vision"]) + (1 if has_tech("coastwatchers") else 0)
+	var v: int = int(Defs.UNITS[u["kind"]]["vision"]) + (1 if has_tech("coastwatchers") else 0)
+	return maxi(1, v - (1 if weather == "fog" else 0))
 
 
 func u_range(u: Dictionary) -> int:
@@ -358,6 +379,8 @@ func income() -> int:
 		inc += story.foundry_income(self)
 	if has_tech("logistics"):
 		inc = int(round(inc * 1.2))
+	if brownout():
+		inc = int(round(inc * 0.85))
 	if story != null:
 		inc = int(round(inc * story.resolve_mult())) + story.convoy
 	return inc
@@ -406,6 +429,10 @@ func compute_visibility() -> void:
 			c["seen_turn"] = turn
 			if story != null:
 				story.on_carrier_seen(self)
+	for lg in landings.values():
+		if naval_visible(lg):
+			lg["seen_pos"] = lg["pos"]
+			lg["seen_turn"] = turn
 
 
 func carrier_visible(c: Dictionary) -> bool:
@@ -526,6 +553,8 @@ func repair_check(sid: int) -> String:
 		return "Undamaged"
 	if s["repaired"]:
 		return "Already repaired this turn"
+	if repairs_used >= repair_crews():
+		return "All %d repair crews are busy this turn" % repair_crews()
 	if supplies < repair_cost(s):
 		return "Not enough supplies"
 	return ""
@@ -538,7 +567,12 @@ func repair(sid: int) -> bool:
 	supplies -= repair_cost(s)
 	s["hp"] += repair_amount(s)
 	s["repaired"] = true
+	repairs_used += 1
 	return true
+
+
+func repair_crews() -> int:
+	return Defs.REPAIR_CREWS + (1 if has_tech("logistics") else 0)
 
 
 # --------------------------------------------------------------------------------------------
@@ -560,6 +594,8 @@ func produce_check(sid: int, ukind: String) -> String:
 		return "Wrong facility"
 	if def.has("tech") and not has_tech(def["tech"]):
 		return "Requires %s" % Defs.TECHS[def["tech"]]["name"]
+	if s["kind"] == "airbase" and not airbase_operational(s):
+		return "Runway cratered: repair the airbase first"
 	if units_from(sid) >= def["max_per"]:
 		return "Limit of %d per %s" % [def["max_per"], Defs.structure_name(s["kind"])]
 	if supplies < def["cost"]:
@@ -611,7 +647,7 @@ func _near_airbase(h: Vector2i) -> bool:
 
 
 func unit_reachable(u: Dictionary) -> Dictionary:
-	if u.is_empty() or u["moved"] or phase != "player":
+	if u.is_empty() or u["moved"] or phase != "player" or unit_grounded(u) != "":
 		return {}
 	var air: bool = Defs.UNITS[u["kind"]]["air"]
 	var passable := func(h: Vector2i) -> bool:
@@ -640,7 +676,7 @@ func move_unit(uid: int, h: Vector2i) -> bool:
 
 
 func unit_targets(u: Dictionary) -> Array:
-	if u.is_empty() or u["kind"] != "interceptor" or u["attacked"] or phase != "player":
+	if u.is_empty() or u["kind"] != "interceptor" or u["attacked"] or phase != "player" or unit_grounded(u) != "":
 		return []
 	var out: Array = []
 	for e in enemies.values():
@@ -666,6 +702,203 @@ func unit_attack(uid: int, eid: int) -> Array:
 	_check_end(events)
 	_sink = null
 	return events
+
+
+## Why a unit cannot fly or sail this turn ("" if it can).
+func unit_grounded(u: Dictionary) -> String:
+	if u.is_empty():
+		return ""
+	if u["kind"] == "interceptor":
+		if weather == "storm":
+			return "Grounded by the storm"
+		var home: Dictionary = structures.get(u["home"], {})
+		if home.is_empty() or not airbase_operational(home):
+			return "Grounded: home runway cratered"
+	return ""
+
+
+func airbase_operational(s: Dictionary) -> bool:
+	return s["hp"] * 2 >= s["max_hp"]
+
+
+## Drone boats: one-way attack on a landing group or carrier within reach.
+func boat_targets(u: Dictionary) -> Array:
+	var out: Array = []
+	if u.is_empty() or u["kind"] != "droneboat" or u["attacked"] or phase != "player":
+		return out
+	for t in naval_targets():
+		if naval_visible(t) and Hex.distance(t["pos"], u["pos"]) <= Defs.BOAT_RANGE:
+			out.append(t["id"])
+	return out
+
+
+func boat_attack(uid: int, tid: int) -> Array:
+	var events: Array = []
+	var u: Dictionary = units.get(uid, {})
+	if u.is_empty() or not boat_targets(u).has(tid):
+		return events
+	_sink = events
+	var t: Dictionary = naval_by_id(tid)
+	var mult := 1.5 if has_tech("precision_strikes") else 1.0
+	var hit := _roll(0.8)
+	var vi := _open_volley(events)
+	events.append({"type": "strike", "weapon": "boat", "from": u["pos"], "to": t["pos"], "cid": tid, "hit": hit})
+	units.erase(uid)
+	events.append({"type": "destroyed", "tgt": "unit", "id": uid, "pos": u["pos"], "kind": u["kind"], "quiet": true})
+	if hit:
+		_damage_naval(t, int(Defs.UNITS["droneboat"]["strike_dmg"] * mult), events)
+	else:
+		log_msg("The drone boats were stopped by escort fire.", "warn")
+	_close_volley(events, vi)
+	compute_visibility()
+	_check_end(events)
+	_sink = null
+	return events
+
+
+# --------------------------------------------------------------------------------------------
+# Mobile launchers, interceptor stocks, infrastructure
+# --------------------------------------------------------------------------------------------
+
+func relocate_check(sid: int, h: Vector2i = Hex.INVALID) -> String:
+	var s: Dictionary = structures.get(sid, {})
+	if s.is_empty() or not Defs.MOBILE.has(s["kind"]):
+		return "Cannot relocate"
+	if phase != "player":
+		return "Only on your turn"
+	if s["acted"]:
+		return "Already acted this turn"
+	if supplies < Defs.RELOCATE_COST:
+		return "Not enough supplies"
+	if h == Hex.INVALID:
+		return "" if not relocate_sites(sid).is_empty() else "No free site within %d hexes" % Defs.RELOCATE_RANGE
+	if Hex.distance(h, s["pos"]) > Defs.RELOCATE_RANGE or h == s["pos"]:
+		return "Out of reach"
+	var why := _site_check(s["kind"], h)
+	return why
+
+
+func _site_check(kind: String, h: Vector2i) -> String:
+	if not tiles.has(h) or not explored.has(h):
+		return "Unexplored territory"
+	if is_water(h):
+		return "Must be on land"
+	if terrain(h) == "mountain" and not Defs.STRUCTURES[kind].get("mountain_ok", false):
+		return "No room on the mountain"
+	if not structure_at(h).is_empty():
+		return "Hex is occupied"
+	return ""
+
+
+func relocate_sites(sid: int) -> Array:
+	var s: Dictionary = structures.get(sid, {})
+	var out: Array = []
+	if s.is_empty():
+		return out
+	for h in Hex.in_range(s["pos"], Defs.RELOCATE_RANGE):
+		if h != s["pos"] and _site_check(s["kind"], h) == "":
+			out.append(h)
+	return out
+
+
+## Shoot and scoot: the site moves, enemy planners lose track of it, and it sits out the next
+## enemy phase while it sets up again.
+func relocate(sid: int, h: Vector2i) -> bool:
+	if relocate_check(sid, h) != "":
+		return false
+	var s: Dictionary = structures[sid]
+	supplies -= Defs.RELOCATE_COST
+	var from: Vector2i = s["pos"]
+	s["pos"] = h
+	s["facing"] = _facing_for(h)
+	s["acted"] = true
+	s["redeploying"] = true
+	ai.known.erase(sid)
+	ai.struct_kills.erase(sid)
+	compute_visibility()
+	log_msg("%s relocated: enemy planners have lost track of it. It sets up again during the next raid." % Defs.structure_name(s["kind"]))
+	set_meta("relocated_from", from)
+	return true
+
+
+func procure_check() -> String:
+	if phase != "player":
+		return "Only on your turn"
+	if procured_turn == turn:
+		return "Already ordered this turn"
+	if interceptors >= Defs.INTERCEPTOR_CAP:
+		return "Stockpile full"
+	if supplies < Defs.PROCURE_COST:
+		return "Not enough supplies"
+	return ""
+
+
+func procure() -> bool:
+	if procure_check() != "":
+		return false
+	supplies -= Defs.PROCURE_COST
+	procured_turn = turn
+	interceptors = mini(Defs.INTERCEPTOR_CAP, interceptors + Defs.PROCURE_AMOUNT)
+	log_msg("Emergency order: +%d interceptors from the Halberd line in Saltmere." % Defs.PROCURE_AMOUNT, "good")
+	return true
+
+
+func escalation() -> int:
+	return story.escalation if story != null else 1
+
+
+func structure_of_kind(kind: String) -> Dictionary:
+	for s in structures.values():
+		if s["kind"] == kind:
+			return s
+	return {}
+
+
+## Rolling blackouts: the power station is down or badly damaged, the LNG reserve is empty, or
+## blackouts were ordered. Lasers go dark, radars lose range, income and the Foundry suffer.
+func brownout() -> bool:
+	if brownout_turns > 0:
+		return true
+	var ps := structure_of_kind("power")
+	if ps.is_empty() or ps["hp"] * 2 < ps["max_hp"]:
+		return true
+	return escalation() >= 2 and energy <= 0
+
+
+## Communications degraded: cable landing lost or cut. Intelligence confidence drops a level.
+func comms_degraded() -> bool:
+	if comms_turns > 0:
+		return true
+	var cs := structure_of_kind("cable")
+	return cs.is_empty() or cs["hp"] * 2 < cs["max_hp"]
+
+
+## 0 Low, 1 Moderate, 2 High.
+func intel_confidence() -> int:
+	var score := 0
+	for s in structures.values():
+		if s["kind"] == "radar":
+			score += 1
+			break
+	if has_tech("satellite_uplink"):
+		score += 1
+	if story != null and story.ally >= 60:
+		score += 1
+	if recon_used_turn == turn:
+		score += 1
+	if confidence_turns > 0:
+		score += 1
+	if comms_degraded():
+		score -= 1
+	if score <= 1:
+		return 0
+	if score <= 2:
+		return 1
+	return 2
+
+
+static func confidence_label(c: int) -> String:
+	return ["Low", "Moderate", "High"][clampi(c, 0, 2)]
 
 
 # --------------------------------------------------------------------------------------------
@@ -784,14 +1017,38 @@ func strike_cost(s: Dictionary) -> int:
 	return Defs.AIR_STRIKE_COST if s["kind"] == "airbase" else Defs.MISSILE_COST
 
 
+func naval_targets() -> Array:
+	var out: Array = carriers.values()
+	out.append_array(landings.values())
+	return out
+
+
+func naval_by_id(id: int) -> Dictionary:
+	if carriers.has(id):
+		return carriers[id]
+	return landings.get(id, {})
+
+
+func naval_visible(t: Dictionary) -> bool:
+	return has_tech("satellite_uplink") or visible_hexes.has(t["pos"])
+
+
+func landing_known(lg: Dictionary) -> bool:
+	return naval_visible(lg) or (lg["seen_turn"] >= turn - 1 and lg["seen_pos"] != Hex.INVALID)
+
+
+func landing_eta(lg: Dictionary) -> int:
+	return int(ceil(float(lg["path"].size()) / Defs.LANDING_SPEED))
+
+
 func strike_targets(sid: int) -> Array:
 	var s: Dictionary = structures.get(sid, {})
 	var out: Array = []
 	if s.is_empty() or not (s["kind"] == "airbase" or s["kind"] == "missile"):
 		return out
-	for c in carriers.values():
-		if carrier_visible(c) and Hex.distance(s["pos"], c["pos"]) <= strike_range(s):
-			out.append(c["id"])
+	for t in naval_targets():
+		if naval_visible(t) and Hex.distance(s["pos"], t["pos"]) <= strike_range(s):
+			out.append(t["id"])
 	return out
 
 
@@ -800,14 +1057,18 @@ func strike_check(sid: int, cid: int = -1) -> String:
 	if s.is_empty():
 		return "No launch site"
 	if s["acted"]:
-		return "Already launched this turn"
+		return "Already acted this turn"
+	if s["kind"] == "airbase" and not airbase_operational(s):
+		return "Runway cratered: repair the airbase first"
+	if s["kind"] == "airbase" and weather == "storm":
+		return "Grounded by the storm"
 	if story != null and turn <= story.strike_lock_until:
 		return "Back-channel truce holds until turn %d" % story.strike_lock_until
 	if supplies < strike_cost(s):
 		return "Not enough supplies"
 	var targets := strike_targets(sid)
 	if targets.is_empty():
-		return "No spotted carrier within %d hexes" % strike_range(s)
+		return "No spotted carrier or landing group within %d hexes" % strike_range(s)
 	if cid >= 0 and not targets.has(cid):
 		return "Target out of range or not spotted"
 	return ""
@@ -819,11 +1080,12 @@ func strike(sid: int, cid: int) -> Array:
 		return events
 	_sink = events
 	var s: Dictionary = structures[sid]
-	var c: Dictionary = carriers[cid]
+	var c: Dictionary = naval_by_id(cid)
 	s["acted"] = true
 	supplies -= strike_cost(s)
 	stats["strikes"] += 1
 	ai.reveal(sid)
+	story.on_strike(self, c)
 	var mult := 1.5 if has_tech("precision_strikes") else 1.0
 	var vi := _open_volley(events)
 	if s["kind"] == "airbase":
@@ -832,20 +1094,38 @@ func strike(sid: int, cid: int) -> Array:
 		if blunted:
 			dmg = int(dmg * 0.5)
 		events.append({"type": "strike", "weapon": "air", "from": s["pos"], "to": c["pos"], "cid": cid, "hit": true})
-		_damage_carrier(c, dmg, events)
-		if blunted and carriers.has(cid):
-			log_msg("Carrier flak blunted the air strike (%d damage)." % dmg, "warn")
+		_damage_naval(c, dmg, events)
+		if blunted and not naval_by_id(cid).is_empty():
+			log_msg("Escort flak blunted the air strike (%d damage)." % dmg, "warn")
 	else:
 		var hit := _roll(0.85)
 		events.append({"type": "strike", "weapon": "missile", "from": s["pos"], "to": c["pos"], "cid": cid, "hit": hit})
 		if hit:
-			_damage_carrier(c, int(rng.randi_range(26, 34) * mult), events)
+			_damage_naval(c, int(rng.randi_range(26, 34) * mult), events)
 		else:
-			log_msg("Cruise missile intercepted by carrier defenses.", "warn")
+			log_msg("Missile intercepted by escort defenses.", "warn")
 	_close_volley(events, vi)
 	_check_end(events)
 	_sink = null
 	return events
+
+
+func _damage_naval(t: Dictionary, dmg: int, events: Array) -> void:
+	if carriers.has(t["id"]):
+		_damage_carrier(t, dmg, events)
+		return
+	if not landings.has(t["id"]):
+		return
+	t["hp"] -= dmg
+	events.append({"type": "damage", "tgt": "landing", "id": t["id"], "dmg": dmg, "hp": maxi(t["hp"], 0), "pos": t["pos"]})
+	if t["hp"] <= 0:
+		landings.erase(t["id"])
+		var pts := int(round(300 * diff()["score_mult"]))
+		score += pts
+		stats["landings_sunk"] = stats.get("landings_sunk", 0) + 1
+		events.append({"type": "destroyed", "tgt": "landing", "id": t["id"], "pos": t["pos"], "kind": "landing", "pts": pts})
+		log_msg("%s DESTROYED before it reached the beach. (+%d)" % [t["name"].to_upper(), pts], "good")
+		story.on_landing_destroyed(self, t)
 
 
 func _damage_carrier(c: Dictionary, dmg: int, events: Array) -> void:
@@ -868,6 +1148,15 @@ func _damage_carrier(c: Dictionary, dmg: int, events: Array) -> void:
 func start_player_turn() -> void:
 	turn += 1
 	phase = "player"
+	if turn > 1:
+		brownout_turns = maxi(0, brownout_turns - 1)
+		comms_turns = maxi(0, comms_turns - 1)
+		confidence_turns = maxi(0, confidence_turns - 1)
+		if escalation() >= 2:
+			energy = maxi(0, energy - 1)
+		var made := 2 + (1 if story != null and story.foundry_alive(self) else 0)
+		interceptors = mini(Defs.INTERCEPTOR_CAP, interceptors + made)
+	repairs_used = 0
 	supplies += income()
 	rp += rp_income()
 	for u in units.values():
@@ -887,16 +1176,24 @@ func start_player_turn() -> void:
 	for s in structures.values():
 		s["acted"] = false
 		s["repaired"] = false
+		s["redeploying"] = false
 	for e in enemies.values():
 		e["reacted"] = false
 	recon = recon.filter(func(r): return r["expires"] > turn)
 	if turn > 1:
 		weather = EnvGen.next_weather(env, weather, weather_rng)
+		if forced_weather != "":
+			weather = forced_weather
+			forced_weather = ""
 	compute_visibility()
-	if wave < waves_total and countdown() == 0:
-		log_msg("Wave %d launches at the end of this turn. Final preparations!" % (wave + 1), "warn")
 	if story != null:
 		story.on_turn_start(self)
+	_update_forecast()
+	if wave < waves_total and countdown() == 0:
+		if intel_confidence() >= 1:
+			log_msg("Wave %d launches at the end of this turn. Final preparations!" % (wave + 1), "warn")
+		else:
+			log_msg("Indicators suggest a raid is close. Our picture of it is poor.", "warn")
 
 
 func end_turn() -> Array:
@@ -925,8 +1222,9 @@ func _enemy_phase(events: Array) -> void:
 	events.append({"type": "phase", "text": "ENEMY PHASE"})
 	_phase_kills = 0
 	_phase_hits = 0
+	_dry_logged = false
 	for s in structures.values():
-		s["shots_left"] = s_shots(s)
+		s["shots_left"] = 0 if s.get("redeploying", false) else s_shots(s)
 	for u in units.values():
 		u["shots_left"] = u_shots(u)
 	for e in enemies.values():
@@ -934,44 +1232,69 @@ func _enemy_phase(events: Array) -> void:
 		e["attacked"] = false
 	ai.begin_phase(self)
 	_move_carriers(events)
+	var launching := wave < waves_total and turn >= next_wave_turn
+	if launching and weather == "storm":
+		launching = false
+		next_wave_turn += 1
+		log_msg("The storm has grounded the Commonwealth's squadrons: the raid is delayed a turn.", "intel")
+	if launching and escalation() >= 3:
+		_ballistic_salvo(events)
+		if result != "":
+			return
+	_move_landings(events)
+	if result != "":
+		return
 	ai.assign_targets(self)
 	var paths: Dictionary = ai.plan_paths(self)
+	var offsets := {}
 	var max_len := 0
 	for p in paths.values():
 		max_len = maxi(max_len, p.size())
 	_process_exits(events)
-	for step in range(0, max_len + 1):
+	var step := 0
+	while step <= max_len:
 		if step > 0:
 			events.append({"type": "beat_start"})
 			for id in paths:
 				if not enemies.has(id):
 					continue
 				var p: Array = paths[id]
-				if step - 1 >= p.size():
+				var k: int = step - 1 - int(offsets.get(id, 0))
+				if k < 0 or k >= p.size():
 					continue
 				var e: Dictionary = enemies[id]
 				var from: Vector2i = e["pos"]
-				e["pos"] = p[step - 1]
+				e["pos"] = p[k]
 				events.append({"type": "move", "ent": "enemy", "id": id, "from": from, "to": e["pos"], "vis": enemy_detected(e)})
 			events.append({"type": "beat_end"})
 			ai.update_known(self)
 			_process_exits(events)
+			_ew_jamming(events)
 		var vi := _open_volley(events)
 		_reaction_fire(events)
 		_close_volley(events, vi)
 		var vi2 := _open_volley(events)
-		for id in paths:
+		var launched: Array = []
+		for id in paths.keys():
 			if enemies.has(id):
-				_enemy_try_attack(enemies[id], events)
+				launched.append_array(_enemy_try_attack(enemies[id], events))
 		_close_volley(events, vi2)
+		for mid in launched:
+			if not enemies.has(mid):
+				continue
+			var mp: Array = ai.plan_single(self, enemies[mid])
+			paths[mid] = mp
+			offsets[mid] = step
+			max_len = maxi(max_len, step + mp.size())
 		if result != "":
 			return
+		step += 1
 	for e in enemies.values():
 		e["fuel"] -= 1
 		if e["fuel"] <= 0 and e["state"] != "rtb":
 			e["state"] = "rtb"
 			e["target"] = {}
-	if wave < waves_total and turn >= next_wave_turn:
+	if launching:
 		_launch_wave(events)
 	for c in carriers.values():
 		c["hp"] = mini(c["max_hp"], c["hp"] + 3)
@@ -984,6 +1307,190 @@ func _enemy_phase(events: Array) -> void:
 	if result == "":
 		story.on_enemy_phase_end(self, events)
 	_check_end(events)
+
+
+## Rocket Force opening salvo (escalation 3+): short-range ballistic missiles at known bases,
+## radars and launchers. Only SAMs with Hit-to-Kill interceptors can try to stop them.
+func _ballistic_salvo(events: Array) -> void:
+	var n: int = int(diff()["salvo"]) + (1 if wave >= waves_total / 2 else 0)
+	var prio := {"airbase": 10.0, "sam": 9.0, "radar": 8.0, "missile": 7.5, "ewar": 6.5, "power": 6.0, "laser": 5.5, "harbor": 4.0, "lab": 3.0}
+	var cands: Array = []
+	for id in ai.known:
+		var s: Dictionary = structures.get(id, {})
+		if s.is_empty() or not prio.has(s["kind"]):
+			continue
+		cands.append([prio[s["kind"]] + rng.randf() * 3.0, s])
+	if cands.is_empty():
+		return
+	cands.sort_custom(func(a, b): return a[0] > b[0])
+	events.append({"type": "salvo_warning", "count": mini(n, cands.size())})
+	log_msg("BALLISTIC MISSILE LAUNCH DETECTED: %d inbound from the mainland." % mini(n, cands.size()), "bad")
+	for i in mini(n, cands.size()):
+		var target: Dictionary = cands[i][1]
+		if not structures.has(target["id"]):
+			continue
+		var vi := _open_volley(events)
+		var intercepted := false
+		var by := Hex.INVALID
+		if has_tech("hit_to_kill"):
+			for sam in structures.values():
+				if sam["kind"] != "sam" or sam.get("redeploying", false) or interceptors < Defs.BMD_COST:
+					continue
+				if Hex.distance(sam["pos"], target["pos"]) > s_range(sam):
+					continue
+				interceptors -= Defs.BMD_COST
+				by = sam["pos"]
+				intercepted = _roll(0.55 + (0.1 if has_tech("phased_array") else 0.0))
+				break
+		events.append({"type": "ballistic", "to": target["pos"], "tid": target["id"], "intercepted": intercepted, "by": by})
+		if intercepted:
+			stats["bm_intercepted"] = stats.get("bm_intercepted", 0) + 1
+			log_msg("Longbow intercepted a ballistic missile over the %s." % Defs.structure_name(target["kind"]), "good")
+		else:
+			_attacker_wave = wave + 1
+			_phase_hits += 1
+			_damage_structure(target, _vary(40.0 if target["kind"] == "airbase" else 32.0), events)
+		_close_volley(events, vi)
+		if result != "":
+			return
+
+
+## Cicada EW stations jam the links of drones, decoys and loitering munitions near them.
+func _ew_jamming(events: Array) -> void:
+	if brownout():
+		return
+	var stations: Array = []
+	for s in structures.values():
+		if s["kind"] == "ewar" and not s.get("redeploying", false):
+			stations.append(s)
+	if stations.is_empty():
+		return
+	var victims: Array = []
+	for e in enemies.values():
+		var role: String = Defs.ENEMIES[e["kind"]]["role"]
+		if not (role in ["scout", "decoy", "seek"]):
+			continue
+		for st in stations:
+			if Hex.distance(st["pos"], e["pos"]) <= int(Defs.STRUCTURES["ewar"]["aura"]):
+				ai.reveal(st["id"])
+				if _roll(0.3):
+					victims.append([e, st])
+				break
+	if victims.is_empty():
+		return
+	var vi := _open_volley(events)
+	for v in victims:
+		var e: Dictionary = v[0]
+		var st: Dictionary = v[1]
+		if not enemies.has(e["id"]):
+			continue
+		events.append({"type": "shot", "weapon": "jam", "src": "structure", "src_id": st["id"], "from": st["pos"], "to": e["pos"],
+			"dst": "enemy", "dst_id": e["id"], "hit": true, "dmg": e["hp"]})
+		_damage_enemy(e, e["hp"], events, "ewar", st)
+	_close_volley(events, vi)
+	log_msg("Cicada jamming: %d drones lost their links." % victims.size(), "good")
+
+
+## Landing groups sail along their planned route; on arrival the target city falls.
+func spawn_landings() -> void:
+	if landings_spawned:
+		return
+	landings_spawned = true
+	var cities: Array = []
+	for s in structures.values():
+		if s["kind"] == "city":
+			cities.append(s)
+	cities.sort_custom(func(a, b): return Hex.to_pixel(a["pos"]).x > Hex.to_pixel(b["pos"]).x)
+	var n: int = diff()["landings"]
+	var made := 0
+	for city in cities:
+		if made >= n:
+			break
+		var site := _landing_site(city["pos"])
+		if site == Hex.INVALID:
+			continue
+		var spawn := Hex.INVALID
+		var best := 999
+		for h in cells:
+			var o := Hex.axial_to_offset(h)
+			if o.x < width - 2 or terrain(h) != "deep" or not carrier_at(h).is_empty():
+				continue
+			var d := absi(o.y - Hex.axial_to_offset(site).y)
+			if d < best:
+				best = d
+				spawn = h
+		if spawn == Hex.INVALID:
+			continue
+		var water := func(h: Vector2i) -> bool:
+			return tiles.has(h) and is_water(h)
+		var path := Pathfinder.find(spawn, site, water, func(_h): return 1.0, 5000)
+		if path.is_empty():
+			continue
+		var hp: int = diff()["landing_hp"]
+		var lg := {"id": next_id, "pos": spawn, "hp": hp, "max_hp": hp, "target": city["id"], "target_name": city["name"],
+			"site": site, "path": path, "name": Situations.LANDING_NAMES[made % Situations.LANDING_NAMES.size()],
+			"seen_pos": Hex.INVALID, "seen_turn": -99, "gunships": 0}
+		next_id += 1
+		landings[lg["id"]] = lg
+		made += 1
+	compute_visibility()
+	if made > 0:
+		log_msg("ASSAULT: %d landing group%s sailing for Tessera's beaches." % [made, "" if made == 1 else "s"], "bad")
+
+
+func _landing_site(city_pos: Vector2i) -> Vector2i:
+	var best := Hex.INVALID
+	var best_x := -INF
+	for r in [1, 2]:
+		for h in Hex.ring(city_pos, r):
+			if not tiles.has(h) or not is_water(h):
+				continue
+			if r == 2:
+				var touches := false
+				for nb in Hex.neighbors(h):
+					if Hex.distance(nb, city_pos) <= 1 and is_land(nb):
+						touches = true
+				if not touches:
+					continue
+			var x := Hex.to_pixel(h).x
+			if x > best_x:
+				best_x = x
+				best = h
+		if best != Hex.INVALID:
+			return best
+	return best
+
+
+func _move_landings(events: Array) -> void:
+	for lg in landings.values():
+		var from: Vector2i = lg["pos"]
+		for k in Defs.LANDING_SPEED:
+			if lg["path"].is_empty():
+				break
+			lg["pos"] = lg["path"].pop_front()
+		if lg["pos"] != from:
+			events.append({"type": "move", "ent": "landing", "id": lg["id"], "from": from, "to": lg["pos"], "vis": naval_visible(lg)})
+		if naval_visible(lg):
+			lg["seen_pos"] = lg["pos"]
+			lg["seen_turn"] = turn
+		if lg["path"].is_empty():
+			_landing_ashore(lg, events)
+			if result != "":
+				return
+		elif Hex.distance(lg["pos"], lg["site"]) <= 6 and int(lg["gunships"]) < 2:
+			lg["gunships"] = int(lg["gunships"]) + 1
+			var g := _add_enemy("gunship", lg["pos"], "East")
+			events.append({"type": "spawn", "id": g["id"], "kind": "gunship", "pos": lg["pos"], "vis": enemy_detected(g)})
+
+
+func _landing_ashore(lg: Dictionary, events: Array) -> void:
+	landings.erase(lg["id"])
+	events.append({"type": "destroyed", "tgt": "landing", "id": lg["id"], "pos": lg["pos"], "kind": "landing", "pts": 0, "quiet": true})
+	var city: Dictionary = structures.get(lg["target"], {})
+	log_msg("%s HAS LANDED. Commonwealth marines are ashore near %s." % [lg["name"].to_upper(), lg["target_name"]], "bad")
+	story.on_landing_ashore(self, lg)
+	if not city.is_empty():
+		_destroy_structure(city, events)
 
 
 func _process_exits(events: Array) -> void:
@@ -1041,7 +1548,7 @@ func _launch_wave(events: Array) -> void:
 	var sector_seen := has_tech("coastwatchers")
 	for kind in plan["units"]:
 		var pos: Vector2i
-		if not carrier_list.is_empty() and kind in ["fighter", "drone", "gunship", "missile"] and rng.randf() < 0.5:
+		if not carrier_list.is_empty() and kind in ["fighter", "drone", "jammer", "aew", "decoy", "kitefang"] and rng.randf() < 0.5:
 			pos = carrier_list[rng.randi_range(0, carrier_list.size() - 1)]["pos"]
 		else:
 			pos = spawn_hexes[rng.randi_range(0, spawn_hexes.size() - 1)]
@@ -1050,7 +1557,7 @@ func _launch_wave(events: Array) -> void:
 		var e := _add_enemy(kind, pos, plan["sector"])
 		comp[kind] = comp.get(kind, 0) + 1
 		events.append({"type": "spawn", "id": e["id"], "kind": kind, "pos": pos, "vis": enemy_detected(e)})
-	next_wave_turn = turn + Defs.WAVE_INTERVAL
+	next_wave_turn = turn + int(Defs.ESCALATION[escalation()]["interval"])
 	var report := {
 		"wave": wave, "total": waves_total, "count": plan["units"].size(),
 		"sector": plan["sector"] if sector_seen else "",
@@ -1064,7 +1571,45 @@ func _launch_wave(events: Array) -> void:
 	events.append({"type": "wave", "report": report})
 	var where := ("from the %s" % plan["sector"]) if sector_seen else "(approach vector unknown)"
 	log_msg("WAVE %d/%d INBOUND %s: %d aircraft." % [wave, waves_total, where, plan["units"].size()], "bad")
+	if forecast.get("wave", -1) == wave:
+		var sz: Array = forecast["size"]
+		log_msg("Intel had forecast %d-%d aircraft (%s confidence)." % [sz[0], sz[1], confidence_label(int(forecast["confidence"])).to_lower()], "intel")
+	forecast = {}
 	log_msg("Intel: " + plan["doctrine"], "intel")
+
+
+## Intelligence forecast for the next wave (within 2 turns), as good as our confidence allows.
+func _update_forecast() -> void:
+	forecast = {}
+	if wave >= waves_total or countdown() > 2 or ai == null:
+		return
+	var plan: Dictionary = ai.plan_wave(self, wave + 1, true)
+	var conf := intel_confidence()
+	var n: int = plan["units"].size()
+	var spread: float = [0.5, 0.3, 0.1][conf]
+	var lo := maxi(1, int(floor(n * (1.0 - spread * intel_rng.randf_range(0.5, 1.0)))))
+	var hi := maxi(lo, int(ceil(n * (1.0 + spread * intel_rng.randf_range(0.5, 1.0)))))
+	var sector: String = plan["sector"]
+	if intel_rng.randf() > [0.45, 0.75, 1.0][conf]:
+		var others: Array = Defs.SECTORS.filter(func(x): return x != sector)
+		sector = others[intel_rng.randi_range(0, others.size() - 1)]
+	var counts := {}
+	for k in plan["units"]:
+		counts[k] = counts.get(k, 0) + 1
+	var kinds: Array = counts.keys()
+	kinds.sort_custom(func(a, b): return counts[a] > counts[b])
+	var types: Array = []
+	if conf >= 1:
+		for k in kinds.slice(0, conf + 1):
+			types.append(Defs.enemy_name(k))
+	var eta := [next_wave_turn, next_wave_turn]
+	if conf == 1:
+		eta = [next_wave_turn, next_wave_turn + 1] if intel_rng.randf() < 0.5 else [next_wave_turn - 1, next_wave_turn]
+	elif conf == 0:
+		eta = [next_wave_turn - 1, next_wave_turn + 1]
+	eta[0] = maxi(eta[0], turn)
+	forecast = {"wave": wave + 1, "confidence": conf, "eta": eta, "size": [lo, hi], "sector": sector,
+		"true_sector": plan["sector"], "types": types, "note": plan["doctrine"] if conf >= 1 else ""}
 
 
 func _check_waves_cleared(events: Array) -> void:
@@ -1142,8 +1687,16 @@ func _close_volley(events: Array, start_size: int) -> void:
 func _reaction_fire(events: Array) -> void:
 	var shooters: Array = []
 	for s in structures.values():
-		if s["shots_left"] > 0 and Defs.STRUCTURES[s["kind"]].has("weapon"):
-			shooters.append(s)
+		if s["shots_left"] <= 0 or not Defs.STRUCTURES[s["kind"]].has("weapon"):
+			continue
+		if s["kind"] == "laser" and brownout():
+			continue
+		if s["kind"] == "sam" and interceptors <= 0:
+			if not _dry_logged:
+				_dry_logged = true
+				log_msg("Longbow batteries are out of interceptors and cannot fire.", "bad")
+			continue
+		shooters.append(s)
 	for u in units.values():
 		if u["shots_left"] > 0 and Defs.UNITS[u["kind"]].has("weapon"):
 			shooters.append(u)
@@ -1155,11 +1708,13 @@ func _reaction_fire(events: Array) -> void:
 			continue
 		var wdef: Dictionary = Defs.STRUCTURES[sh["kind"]] if is_struct else Defs.UNITS[sh["kind"]]
 		var r := s_range(sh) if is_struct else u_range(sh)
+		if is_struct and sh["kind"] == "sam" and interceptors <= 0:
+			continue
 		var target := _pick_target(sh["pos"], r, wdef)
 		if not target.is_empty():
 			_fire(sh, wdef, target, events)
 	for u in units.values():
-		if u["kind"] != "interceptor" or not u["react"] or not units.has(u["id"]):
+		if u["kind"] != "interceptor" or not u["react"] or not units.has(u["id"]) or unit_grounded(u) != "":
 			continue
 		var best := {}
 		var best_sc := -INF
@@ -1194,14 +1749,36 @@ func _pick_target(pos: Vector2i, r: int, wdef: Dictionary) -> Dictionary:
 	return best
 
 
+## True when an enemy EW jet is within 2 hexes of `pos`: no radar bonus and -20% accuracy there.
+func _jammed_at(pos: Vector2i) -> bool:
+	for j in enemies.values():
+		if Defs.ENEMIES[j["kind"]]["role"] == "jammer" and Hex.distance(j["pos"], pos) <= 2:
+			return true
+	return false
+
+
+func weather_laser_penalty() -> float:
+	return {"rain": 0.25, "storm": 0.4, "fog": 0.25, "haze": 0.15}.get(weather, 0.0)
+
+
 func _fire(sh: Dictionary, wdef: Dictionary, e: Dictionary, events: Array) -> void:
 	sh["shots_left"] -= 1
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
 	var acc: float = wdef["acc"] + accuracy_bonus()
-	if radar_cov.has(e["pos"]):
+	var jammed := _jammed_at(e["pos"])
+	if radar_cov.has(e["pos"]) and not jammed:
 		acc += radar_bonus()
+	if jammed:
+		acc -= 0.2
 	if edef.get("stealth", false):
 		acc -= 0.2
+	if wdef.get("weapon", "") == "laser":
+		acc -= weather_laser_penalty()
+	if wdef.get("weapon", "") == "sam":
+		interceptors = maxi(0, interceptors - 1)
+		stats["interceptors_used"] = stats.get("interceptors_used", 0) + 1
+		if edef["role"] == "missile" and has_tech("hit_to_kill"):
+			acc += 0.1
 	var hit := _roll(acc)
 	var dmg := _vary(weapon_damage(wdef, edef["alt"]))
 	events.append({"type": "shot", "weapon": wdef["weapon"], "src": sh["cls"], "src_id": sh["id"], "from": sh["pos"],
@@ -1220,8 +1797,11 @@ func _fire(sh: Dictionary, wdef: Dictionary, e: Dictionary, events: Array) -> vo
 func _dogfight(u: Dictionary, e: Dictionary, events: Array) -> void:
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
 	var acc: float = Defs.UNITS["interceptor"]["acc"] + accuracy_bonus()
-	if radar_cov.has(e["pos"]):
+	var jammed := _jammed_at(e["pos"])
+	if radar_cov.has(e["pos"]) and not jammed:
 		acc += radar_bonus()
+	if jammed:
+		acc -= 0.1
 	if edef.get("stealth", false):
 		acc -= 0.2
 	var dmg := float(u_dmg(u))
@@ -1261,32 +1841,75 @@ func _enemy_shoot_unit(e: Dictionary, u: Dictionary, dmg: int, weapon: String, e
 	_damage_unit(u, dmg, events)
 
 
-func _enemy_try_attack(e: Dictionary, events: Array) -> void:
+## Returns the ids of any missiles launched (standoff bombers), so the phase can route them.
+func _enemy_try_attack(e: Dictionary, events: Array) -> Array:
 	if e["attacked"] or e["state"] == "rtb" or e["target"].is_empty():
-		return
+		return []
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
-	if edef["role"] == "scout":
-		return
+	if edef["role"] in ["scout", "jammer", "aew"]:
+		return []
 	var t: Dictionary = e["target"]
 	var rng_att: int = edef["attack_range"]
 	if t.get("type", "") == "escort":
+		if edef["role"] != "fighter":
+			return []
 		# Escorting fighters strafe whatever known structure they pass over.
 		for s in structures.values():
 			if Hex.distance(e["pos"], s["pos"]) <= rng_att and ai.known.has(s["id"]):
 				_enemy_strike_structure(e, s, events)
-				return
-		return
+				return []
+		return []
 	match t.get("type", ""):
 		"structure":
 			var s: Dictionary = structures.get(t["id"], {})
 			if s.is_empty() or Hex.distance(e["pos"], s["pos"]) > rng_att:
-				return
+				return []
+			if edef["role"] == "standoff":
+				return _launch_salvo(e, s, events)
 			_enemy_strike_structure(e, s, events)
 		"unit":
 			var u: Dictionary = units.get(t["id"], {})
 			if u.is_empty() or Hex.distance(e["pos"], u["pos"]) > rng_att:
-				return
+				return []
 			_enemy_strike_unit(e, u, events)
+	return []
+
+
+## A standoff bomber releases its cruise missiles from outside the defenses and turns for home.
+func _launch_salvo(e: Dictionary, s: Dictionary, events: Array) -> Array:
+	e["attacked"] = true
+	var ids: Array = []
+	var n: int = Defs.ENEMIES[e["kind"]].get("salvo", 2)
+	var seen := enemy_detected(e)
+	events.append({"type": "salvo", "id": e["id"], "from": e["pos"], "to": s["pos"], "vis": seen})
+	for k in n:
+		var m := _add_enemy("missile", e["pos"], e["sector"])
+		m["wave"] = e["wave"]
+		m["target"] = {"type": "structure", "id": s["id"], "pos": s["pos"]}
+		events.append({"type": "spawn", "id": m["id"], "kind": "missile", "pos": e["pos"], "vis": enemy_detected(m)})
+		ids.append(m["id"])
+	e["state"] = "rtb"
+	e["target"] = {}
+	if seen:
+		log_msg("%s released %d cruise missiles at the %s." % [Defs.enemy_name(e["kind"]), n, Defs.structure_name(s["kind"])], "warn")
+	return ids
+
+
+## +10% enemy accuracy while a Skylark AEW&C is airborne.
+func _aew_bonus() -> float:
+	for e in enemies.values():
+		if Defs.ENEMIES[e["kind"]]["role"] == "aew":
+			return 0.1
+	return 0.0
+
+
+func _ew_covered(pos: Vector2i) -> bool:
+	if brownout():
+		return false
+	for s in structures.values():
+		if s["kind"] == "ewar" and not s.get("redeploying", false) and Hex.distance(s["pos"], pos) <= int(Defs.STRUCTURES["ewar"]["aura"]):
+			return true
+	return false
 
 
 func _enemy_weapon(kind: String) -> String:
@@ -1295,7 +1918,7 @@ func _enemy_weapon(kind: String) -> String:
 			return "bombs"
 		"gunship":
 			return "rockets"
-		"missile":
+		"missile", "decoy", "kitefang":
 			return "impact"
 	return "guns"
 
@@ -1304,7 +1927,10 @@ func _enemy_strike_structure(e: Dictionary, s: Dictionary, events: Array) -> voi
 	e["attacked"] = true
 	_attacker_wave = e["wave"]
 	var edef: Dictionary = Defs.ENEMIES[e["kind"]]
-	var hit := _roll(edef["acc"])
+	var acc: float = edef["acc"] + _aew_bonus()
+	if edef["role"] in ["missile", "decoy", "seek"] and _ew_covered(s["pos"]):
+		acc -= 0.2
+	var hit := _roll(acc)
 	events.append({"type": "attack", "id": e["id"], "kind": e["kind"], "weapon": _enemy_weapon(e["kind"]),
 		"from": e["pos"], "to": s["pos"], "hit": hit, "vis": enemy_detected(e)})
 	if hit:
@@ -1345,7 +1971,7 @@ func _after_attack(e: Dictionary, events: Array) -> void:
 		"strike":
 			e["state"] = "rtb"
 			e["target"] = {}
-		"missile":
+		"missile", "decoy", "seek":
 			enemies.erase(e["id"])
 			events.append({"type": "destroyed", "tgt": "enemy", "id": e["id"], "pos": e["pos"], "kind": e["kind"], "pts": 0, "quiet": true})
 		"sead":
@@ -1370,6 +1996,8 @@ func _damage_structure(s: Dictionary, dmg: int, events: Array) -> void:
 	dmg = maxi(dmg, 1)
 	s["hp"] -= dmg
 	stats["damage_taken"] += dmg
+	if (s["kind"] == "city" or s["kind"] == "capital") and story != null:
+		story.on_city_hit(s.get("name", ""))
 	_track_wave_damage(dmg)
 	events.append({"type": "damage", "tgt": "structure", "id": s["id"], "dmg": dmg, "hp": maxi(s["hp"], 0), "pos": s["pos"], "shielded": shielded})
 	if s["hp"] <= 0:
@@ -1471,6 +2099,11 @@ func to_dict() -> Dictionary:
 		"last_wave_report": last_wave_report, "capital_id": capital_id, "ai": ai.to_dict(),
 		"story": story.to_dict(), "env": env, "weather": weather,
 		"weather_seed": weather_rng.seed, "weather_state": weather_rng.state,
+		"interceptors": interceptors, "landings": landings, "objectives": objectives, "forecast": forecast,
+		"energy": energy, "brownout_turns": brownout_turns, "comms_turns": comms_turns,
+		"confidence_turns": confidence_turns, "repairs_used": repairs_used, "procured_turn": procured_turn,
+		"landings_spawned": landings_spawned, "intel_seed": intel_rng.seed, "intel_state": intel_rng.state,
+		"forced_weather": forced_weather,
 	}
 
 
@@ -1515,6 +2148,20 @@ static func from_dict(d: Dictionary) -> GameState:
 	st.weather = d.get("weather", "clear")
 	st.weather_rng.seed = d.get("weather_seed", 1)
 	st.weather_rng.state = d.get("weather_state", 0)
+	st.interceptors = d.get("interceptors", 0)
+	st.landings = d.get("landings", {})
+	st.objectives = d.get("objectives", [])
+	st.forecast = d.get("forecast", {})
+	st.energy = d.get("energy", Defs.ENERGY_DAYS)
+	st.brownout_turns = d.get("brownout_turns", 0)
+	st.comms_turns = d.get("comms_turns", 0)
+	st.confidence_turns = d.get("confidence_turns", 0)
+	st.repairs_used = d.get("repairs_used", 0)
+	st.procured_turn = d.get("procured_turn", -1)
+	st.landings_spawned = d.get("landings_spawned", false)
+	st.forced_weather = d.get("forced_weather", "")
+	st.intel_rng.seed = d.get("intel_seed", 1)
+	st.intel_rng.state = d.get("intel_state", 0)
 	st.ai = EnemyAI.new()
 	st.ai.from_dict(d["ai"])
 	st.story = Campaign.new()

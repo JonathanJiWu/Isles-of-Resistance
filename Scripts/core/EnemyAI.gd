@@ -7,9 +7,14 @@ extends RefCounted
 const VALUE := {
 	"capital": 10.0, "city": 7.0, "lab": 6.0, "decoy": 8.0, "airbase": 6.0, "missile": 6.5,
 	"harbor": 5.0, "radar": 5.0, "sam": 4.0, "laser": 4.5, "flak": 3.0, "bunker": 2.0,
-	"power": 3.0, "cable": 2.5,
+	"power": 5.0, "cable": 4.0, "ewar": 5.0,
 }
-const CAUTION := {"strike": 1.0, "missile": 0.15, "sead": 0.35, "fighter": 0.5, "scout": 0.8}
+const CAUTION := {"strike": 1.0, "missile": 0.15, "sead": 0.35, "fighter": 0.5, "scout": 0.8, "decoy": 0.05,
+	"seek": 0.3, "standoff": 0.9, "aew": 2.0, "jammer": 0.6}
+## How targets are classed for the escalation ladder (Defs.ESCALATION civil / infra multipliers).
+const CIVIL := ["city", "capital", "lab"]
+const INFRA := ["power", "cable", "harbor"]
+const EMITTERS := ["radar", "sam", "ewar"]
 
 var known := {}            # structure id -> true
 var seen_units := {}       # unit id -> {"pos": Vector2i, "turn": int}
@@ -230,8 +235,8 @@ func _target_valid(st: GameState, t: Dictionary) -> bool:
 func _ordered_enemies(st: GameState) -> Array:
 	var list: Array = st.enemies.values()
 	list.sort_custom(func(a, b):
-		var fa: int = 1 if a["kind"] == "fighter" else 0
-		var fb: int = 1 if b["kind"] == "fighter" else 0
+		var fa: int = 1 if a["kind"] in ["fighter", "jammer"] else 0
+		var fb: int = 1 if b["kind"] in ["fighter", "jammer"] else 0
 		if fa != fb:
 			return fa < fb
 		return a["id"] < b["id"])
@@ -249,14 +254,22 @@ func assign_targets(st: GameState) -> void:
 		match role:
 			"scout":
 				_target_scout(st, e)
-			"strike", "missile":
+			"strike", "missile", "decoy", "standoff":
 				if not _target_valid(st, e["target"]):
 					e["target"] = _pick_value_target(st, e, targeted, CAUTION[role] if e["kind"] != "stealth" else 0.35)
 			"sead":
 				if not _target_valid(st, e["target"]):
 					e["target"] = _pick_aa_target(st, e, targeted)
+			"seek":
+				if not _target_valid(st, e["target"]):
+					e["target"] = _pick_emitter_target(st, e, targeted)
 			"fighter":
 				e["target"] = _pick_fighter_target(st, e, targeted)
+			"jammer":
+				e["target"] = _pick_escort(st, e)
+			"aew":
+				if e["target"].get("type", "") != "orbit":
+					e["target"] = _pick_orbit(st, e)
 		var t: Dictionary = e["target"]
 		if t.get("type", "") == "structure":
 			targeted[t["id"]] = targeted.get(t["id"], 0) + 1
@@ -305,9 +318,9 @@ func _pick_value_target(st: GameState, e: Dictionary, targeted: Dictionary, caut
 		var s: Dictionary = st.structures.get(id, {})
 		if s.is_empty():
 			continue
-		var v: float = VALUE.get(s["kind"], 2.0)
-		if s.get("foundry", false) and st.story != null:
-			v = st.story.foundry_value()
+		var v: float = target_value(st, s)
+		if edef.get("hunts_emitters", false) and EMITTERS.has(s["kind"]):
+			v *= 2.0
 		v *= 1.0 + 0.4 * (1.0 - float(s["hp"]) / s["max_hp"])
 		v /= 1.0 + 0.35 * targeted.get(id, 0)
 		var danger := _line_threat(e["pos"], s["pos"], edef["alt"])
@@ -321,6 +334,80 @@ func _pick_value_target(st: GameState, e: Dictionary, targeted: Dictionary, caut
 	if best.is_empty():
 		return {}
 	return {"type": "structure", "id": best["id"], "pos": best["pos"]}
+
+
+## Value of a structure to the enemy, shaped by the escalation ladder: early on they go after
+## military sites; cities and infrastructure become targets as the war widens.
+func target_value(st: GameState, s: Dictionary) -> float:
+	var v: float = VALUE.get(s["kind"], 2.0)
+	if s.get("foundry", false) and st.story != null:
+		v = st.story.foundry_value()
+	var lvl: Dictionary = Defs.ESCALATION[clampi(st.escalation(), 0, 4)]
+	if CIVIL.has(s["kind"]) and not s.get("foundry", false):
+		v *= float(lvl["civil"]) if s["kind"] != "capital" else maxf(0.5, float(lvl["civil"]))
+	elif INFRA.has(s["kind"]):
+		v *= float(lvl["infra"])
+	return v
+
+
+## Anti-radiation munitions home on emitters: radars, SAM fire control, EW stations.
+func _pick_emitter_target(st: GameState, e: Dictionary, targeted: Dictionary) -> Dictionary:
+	var best := {}
+	var best_sc := -INF
+	var hp: float = maxf(e["hp"], 8.0)
+	for id in known:
+		var s: Dictionary = st.structures.get(id, {})
+		if s.is_empty() or not EMITTERS.has(s["kind"]):
+			continue
+		var sc: float = 60.0 + struct_kills.get(id, 0) * 8.0 - Hex.distance(e["pos"], s["pos"]) * 0.5 + st.rng.randf() * 4.0
+		sc /= 1.0 + 0.5 * targeted.get(id, 0)
+		sc /= 1.0 + 0.3 * _line_threat(e["pos"], s["pos"], "low") / hp
+		if Hex.distance(e["pos"], s["pos"]) > _reach(e):
+			sc -= 50.0
+		if sc > best_sc:
+			best_sc = sc
+			best = {"type": "structure", "id": s["id"], "pos": s["pos"]}
+	if best.is_empty():
+		return _pick_aa_target(st, e, targeted)
+	return best
+
+
+## EW jets stay with the strike package they protect.
+func _pick_escort(st: GameState, e: Dictionary) -> Dictionary:
+	var ally := {}
+	var ally_d := 99
+	for a in st.enemies.values():
+		if a["id"] == e["id"] or a["state"] == "rtb":
+			continue
+		if not (Defs.ENEMIES[a["kind"]]["role"] in ["standoff", "strike", "sead", "decoy"]):
+			continue
+		var d := Hex.distance(e["pos"], a["pos"])
+		if d < ally_d:
+			ally_d = d
+			ally = a
+	if ally.is_empty():
+		return {"type": "exit", "pos": nearest_exit(st, e["pos"])}
+	return {"type": "escort", "id": ally["id"], "pos": ally["pos"]}
+
+
+## The AEW&C picks an orbit far enough out to stay clear of known missile coverage but close
+## enough to watch the islands, and holds it until its fuel runs low.
+func _pick_orbit(st: GameState, e: Dictionary) -> Dictionary:
+	var cap: Dictionary = st.capital()
+	var center: Vector2i = cap["pos"] if not cap.is_empty() else e["pos"]
+	var best: Vector2i = e["pos"]
+	var best_sc := -INF
+	for h in st.cells:
+		var d := Hex.distance(h, center)
+		if d < 6 or d > 10:
+			continue
+		if Hex.to_pixel(h).x < Hex.to_pixel(center).x:
+			continue
+		var sc: float = -threat_at(h, "high") * 3.0 - absf(d - 8.0) - Hex.distance(h, e["pos"]) * 0.15 + st.rng.randf()
+		if sc > best_sc:
+			best_sc = sc
+			best = h
+	return {"type": "orbit", "pos": best}
 
 
 func _pick_aa_target(st: GameState, e: Dictionary, targeted: Dictionary) -> Dictionary:
@@ -414,7 +501,7 @@ func target_hex(st: GameState, e: Dictionary) -> Vector2i:
 		"escort":
 			var a: Dictionary = st.enemies.get(t["id"], {})
 			return a["pos"] if not a.is_empty() else Hex.INVALID
-		"scout", "exit":
+		"scout", "exit", "orbit":
 			return t["pos"]
 	return Hex.INVALID
 
@@ -423,9 +510,16 @@ func target_hex(st: GameState, e: Dictionary) -> Vector2i:
 # Path planning
 # --------------------------------------------------------------------------------------------
 
-func plan_paths(st: GameState) -> Dictionary:
+## Path for one aircraft (used for missiles launched mid-phase).
+func plan_single(st: GameState, e: Dictionary) -> Array:
+	compute_threat(st)
+	var tmp := plan_paths(st, [e])
+	return tmp.get(e["id"], [])
+
+
+func plan_paths(st: GameState, only: Array = []) -> Dictionary:
 	var paths := {}
-	for e in _ordered_enemies(st):
+	for e in (only if not only.is_empty() else _ordered_enemies(st)):
 		var edef: Dictionary = Defs.ENEMIES[e["kind"]]
 		var t: Dictionary = e["target"]
 		if t.is_empty():
@@ -481,6 +575,8 @@ func _astar(st: GameState, e: Dictionary, goal: Vector2i) -> Array:
 	var caution: float = 1.2 if e["state"] == "rtb" else CAUTION[edef["role"]]
 	if e["kind"] == "stealth":
 		caution = 0.35
+	if edef["role"] == "aew" and e["state"] != "rtb":
+		caution = 2.0
 	var tm := threat_low if low else threat_high
 	var hp: float = maxf(e["hp"], 8.0)
 	var tiles := st.tiles
@@ -495,17 +591,25 @@ func _astar(st: GameState, e: Dictionary, goal: Vector2i) -> Array:
 # Wave planning (the adaptive part)
 # --------------------------------------------------------------------------------------------
 
-func plan_wave(st: GameState, w: int) -> Dictionary:
+## Plans wave `w`. With preview=true nothing in the AI's memory changes, so intelligence can
+## forecast the raid; the real plan at launch can still differ if the defenses changed.
+func plan_wave(st: GameState, w: int, preview: bool = false) -> Dictionary:
 	compute_threat(st)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([st.seed_value, w, known.size(), int(st.stats.get("kills_total", 0)), st.structures.size()])
 	var d: Dictionary = st.diff()
+	var esc := st.escalation()
 	var alive := float(st.carriers.size())
 	var budget: float = (d["base"] + d["growth"] * (w - 1)) * (0.45 + 0.55 * alive / float(d["carriers"]))
+	budget *= float(Defs.ESCALATION[clampi(esc, 0, 4)]["budget"])
 	if st.story != null:
 		budget *= st.story.budget_mult()
 	var flak := 0.0
 	var sam := 0.0
 	var laser := 0.0
 	var air := 0.0
+	var emitters := 0.0
+	var ewar := 0.0
 	for id in known:
 		var s: Dictionary = st.structures.get(id, {})
 		if s.is_empty():
@@ -517,10 +621,16 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 				flak += 0.5
 			"sam":
 				sam += 1.0
+				emitters += 1.0
 			"laser":
 				laser += 1.0
 			"airbase":
 				air += 1.5
+			"radar":
+				emitters += 1.0
+			"ewar":
+				ewar += 1.0
+				emitters += 1.0
 	for uid in seen_units:
 		if not st.units.has(uid) or st.turn - seen_units[uid]["turn"] > 3:
 			continue
@@ -529,40 +639,60 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 		else:
 			flak += 1.0
 	var low_t: float = flak + laser * 1.5 + kills_by.get("flak", 0) * 0.35 + kills_by.get("frigate", 0) * 0.35 + kills_by.get("laser", 0) * 0.4
-	var high_t: float = sam * 1.6 + laser * 1.5 + kills_by.get("sam", 0) * 0.45
+	var high_t: float = sam * 1.6 + laser * 0.6 + kills_by.get("sam", 0) * 0.45
 	var air_t: float = air + kills_by.get("interceptor", 0) * 0.4
 
-	var weights := {"drone": 1.2, "fighter": 1.4, "gunship": 2.0, "bomber": 3.0}
-	# New aircraft types are phased in over three waves instead of appearing all at once.
-	var missile_wave: int = Defs.ENEMIES["missile"]["min_wave"]
-	var stealth_wave: int = Defs.ENEMIES["stealth"]["min_wave"]
-	if w >= missile_wave:
-		weights["missile"] = 1.4 * minf(1.0, (w - missile_wave + 1) / 3.0)
-	if w >= stealth_wave:
-		weights["stealth"] = 1.6 * minf(1.0, (w - stealth_wave + 1) / 3.0)
+	var weights := {"drone": 1.0, "fighter": 1.4, "bomber": 2.6}
+	var phase_in := func(kind: String, base: float) -> void:
+		var def: Dictionary = Defs.ENEMIES[kind]
+		if esc < int(def.get("min_escalation", 0)):
+			return
+		var mw: int = def.get("min_wave", 1)
+		if w < mw:
+			return
+		weights[kind] = base * minf(1.0, (w - mw + 1) / 3.0)
+	phase_in.call("decoy", 1.0)
+	phase_in.call("kitefang", 0.9)
+	phase_in.call("jammer", 0.8)
+	phase_in.call("missile", 1.3)
+	phase_in.call("stealth", 1.5)
 	if st.story != null and not st.story.allow_new_types():
-		weights.erase("missile")
-		weights.erase("stealth")
+		for k in ["missile", "stealth", "jammer"]:
+			weights.erase(k)
 	var notes: Array = []
 	if high_t > low_t * 1.3 and high_t >= 2.0:
-		weights["gunship"] *= 2.2
-		weights["bomber"] *= 0.55
-		weights["drone"] *= 1.3
+		weights["bomber"] *= 0.75
+		if weights.has("decoy"):
+			weights["decoy"] *= 2.6
+		if weights.has("kitefang"):
+			weights["kitefang"] *= 1.6
 		if weights.has("missile"):
-			weights["missile"] *= 1.8
+			weights["missile"] *= 1.6
 		if weights.has("stealth"):
-			weights["stealth"] *= 0.7
-		notes.append("Your SAM coverage is forcing the enemy low: expect gunships and sea-skimming missiles.")
+			weights["stealth"] *= 0.8
+		notes.append("Your SAM network is their problem: expect cheap decoys built to drain your interceptors, and low munitions under the missiles.")
 	elif low_t > high_t * 1.3 and low_t >= 2.0:
-		weights["bomber"] *= 1.7
-		weights["gunship"] *= 0.6
-		weights["drone"] *= 0.6
+		weights["bomber"] *= 1.6
+		if weights.has("kitefang"):
+			weights["kitefang"] *= 0.5
+		if weights.has("decoy"):
+			weights["decoy"] *= 1.2
 		if weights.has("stealth"):
-			weights["stealth"] *= 1.5
-		notes.append("Your flak belts have the enemy flying high: expect heavy bombers above the guns.")
+			weights["stealth"] *= 1.4
+		notes.append("Your guns own the low sky: expect missile bombers launching from high altitude, out of their reach.")
 	if air_t >= 2.0:
 		weights["fighter"] *= 1.0 + minf(air_t * 0.35, 2.0)
-		notes.append("Interceptor activity noted: bombers will fly with fighter escorts.")
+		notes.append("Interceptor activity noted: the strike package will fly with fighter escorts.")
+	if emitters >= 2.0 and weights.has("kitefang"):
+		weights["kitefang"] *= 1.5
+		notes.append("Anti-radiation drones are being prepared against your radars and fire-control sets.")
+	if ewar >= 1.0:
+		for k in ["drone", "decoy", "kitefang"]:
+			if weights.has(k):
+				weights[k] *= 0.6
+		if weights.has("missile"):
+			weights["missile"] *= 1.3
+		notes.append("Your jammers are spoiling their drones: they are leaning on missiles instead.")
 	if weights.has("stealth"):
 		var stealth_kills: int = st.stats["kills"].get("stealth", 0)
 		if stealth_kills >= 2:
@@ -570,10 +700,11 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 			notes.append("Stealth losses are mounting: the enemy is holding back its stealth wing.")
 		elif not st.has_tech("phased_array"):
 			weights["stealth"] *= 1.4
-			if w == Defs.ENEMIES["stealth"]["min_wave"]:
-				notes.append("Stealth bombers sighted at enemy airfields. Phased Array radar can detect them.")
+			if w == int(Defs.ENEMIES["stealth"]["min_wave"]):
+				notes.append("Stealth fighters are flying from mainland bases. Phased Array radar can see them.")
 	if st.story != null and st.story.glass == "cracked" and not st.story.flags.has("glass_noted"):
-		st.story.flags["glass_noted"] = true
+		if not preview:
+			st.story.flags["glass_noted"] = true
 		notes.append("The Glass Shield is gone: Silica Point is now on their target list.")
 	if st.story != null and st.story.budget_mult() > 1.05:
 		notes.append("Political pressure in the Steering Council is putting more aircraft in the air.")
@@ -584,27 +715,37 @@ func plan_wave(st: GameState, w: int) -> Dictionary:
 		notes.append("Enemy planners know little of your defenses: reconnaissance drones will probe the islands.")
 
 	var units: Array = []
-	while budget >= 2.0 and units.size() < 26:
-		var pick := _weighted_pick(weights, budget, st.rng)
+	var aew: Dictionary = Defs.ENEMIES["aew"]
+	if esc >= int(aew["min_escalation"]) and w >= int(aew["min_wave"]) and budget >= 10.0:
+		units.append("aew")
+		budget -= float(aew["cost"])
+		notes.append("An airborne early-warning radar will orbit beyond your missiles to direct the raid.")
+	while budget >= 1.0 and units.size() < 28:
+		var pick := _weighted_pick(weights, budget, rng)
 		if pick == "":
 			break
 		units.append(pick)
 		budget -= Defs.ENEMIES[pick]["cost"]
 	if not units.has("bomber") and not units.has("stealth") and units.size() >= 2:
-		units[0] = "bomber"
+		var i0 := 1 if units[0] == "aew" else 0
+		if i0 < units.size():
+			units[i0] = "bomber"
 
-	var sector := _choose_sector(st)
-	if last_sector != "" and sector != last_sector and sector_losses.get(last_sector, 0.0) >= 8.0:
-		notes.append("Heavy losses on the %s approach have pushed the enemy to a new vector." % last_sector)
-	if sector == last_sector:
-		sector_streak += 1
-	else:
-		sector_streak = 0
-	last_sector = sector
-	for k in sector_losses.keys():
-		sector_losses[k] *= 0.7
-	doctrine = " ".join(notes) if not notes.is_empty() else "A standard combined-arms raid is forming."
-	return {"units": units, "sector": sector, "doctrine": doctrine}
+	var sector := _choose_sector(st, rng)
+	if not preview:
+		if last_sector != "" and sector != last_sector and sector_losses.get(last_sector, 0.0) >= 8.0:
+			notes.append("Heavy losses on the %s approach have pushed the enemy to a new vector." % last_sector)
+		if sector == last_sector:
+			sector_streak += 1
+		else:
+			sector_streak = 0
+		last_sector = sector
+		for k in sector_losses.keys():
+			sector_losses[k] *= 0.7
+	var text := " ".join(notes) if not notes.is_empty() else "A standard combined-arms raid is forming."
+	if not preview:
+		doctrine = text
+	return {"units": units, "sector": sector, "doctrine": text}
 
 
 func _weighted_pick(weights: Dictionary, budget: float, rng: RandomNumberGenerator) -> String:
@@ -624,7 +765,7 @@ func _weighted_pick(weights: Dictionary, budget: float, rng: RandomNumberGenerat
 	return ""
 
 
-func _choose_sector(st: GameState) -> String:
+func _choose_sector(st: GameState, rng: RandomNumberGenerator) -> String:
 	var cap: Dictionary = st.capital()
 	var target: Vector2i = cap["pos"] if not cap.is_empty() else Hex.offset_to_axial(st.width / 4, st.height / 2)
 	var best := "East"
@@ -635,7 +776,7 @@ func _choose_sector(st: GameState) -> String:
 			continue
 		var mid: Vector2i = hexes[hexes.size() / 2]
 		var danger := (_line_threat(mid, target, "low") + _line_threat(mid, target, "high")) * 0.5
-		var sc: float = danger * 0.6 + sector_losses.get(sec, 0.0) * 1.2 + st.rng.randf() * 8.0 + Hex.distance(mid, target) * 0.4
+		var sc: float = danger * 0.6 + sector_losses.get(sec, 0.0) * 1.2 + rng.randf() * 8.0 + Hex.distance(mid, target) * 0.4
 		if sec == last_sector:
 			sc += 3.0 * (sector_streak + 1)
 		if sc < best_sc:

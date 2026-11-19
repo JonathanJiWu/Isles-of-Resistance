@@ -16,6 +16,7 @@ const FACTIONS := {
 
 const PEOPLE := {
 	"ardent": {"name": "Capt. Teo Ardent", "title": "Air Defense Command", "faction": "tessera"},
+	"tamsin": {"name": "Cmdr. Rhea Tamsin", "title": "Coast Guard Administration", "faction": "tessera"},
 	"solenne": {"name": "President Imara Solenne", "title": "Republic of Tessera", "faction": "tessera"},
 	"haldane": {"name": "Dr. Ines Haldane", "title": "CEO, Tessera Lithographic Works", "faction": "tlw"},
 	"mara": {"name": "Mara Okafor-Lin", "title": "Process Engineer, Fab 18", "faction": "tlw"},
