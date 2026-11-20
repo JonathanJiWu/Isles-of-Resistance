@@ -23,6 +23,24 @@ const SEASONS := {
 }
 const SEASON_ORDER := ["plum_rain", "typhoon", "winter_monsoon", "dry_spring"]
 
+## Weather: display name and what it does to the fight (see GameState).
+const WEATHER := {
+	"clear": {"name": "Clear", "fx": "No effects."},
+	"overcast": {"name": "Overcast", "fx": "Low cloud. No effects."},
+	"haze": {"name": "Haze", "fx": "Lasers -15% accuracy."},
+	"rain": {"name": "Rain", "fx": "Lasers -25% accuracy."},
+	"fog": {"name": "Fog", "fx": "Vision -1 for everyone. Lasers -25% accuracy."},
+	"storm": {"name": "Storm", "fx": "Aircraft grounded on both sides: raids are delayed, air strikes and interceptors cannot fly. Lasers -40% accuracy."},
+}
+
+
+static func weather_name(w: String) -> String:
+	return WEATHER.get(w, WEATHER["clear"])["name"]
+
+
+static func weather_fx(w: String) -> String:
+	return WEATHER.get(w, WEATHER["clear"])["fx"]
+
 
 static func generate(seed_value: int, tiles: Dictionary, cells: Array, w: int, h: int, hubs: Array, occupied: Array) -> Dictionary:
 	var rng := RandomNumberGenerator.new()

@@ -9,6 +9,10 @@ const WAVE_INTERVAL := 3
 const FIRST_WAVE_TURN := 2
 const CARRIER_ZONE := 6          # carriers patrol the easternmost N columns
 const RECON_COST := 15
+## Strategic infrastructure can be rebuilt on its ruins (supplies), at half strength.
+const REBUILD := {"power": 60, "cable": 30}
+## Coastal radars and patrol aircraft track a landing group this close to any of your sites.
+const LANDING_TRACK := 7
 const RECON_RANGE := 12
 const RECON_RADIUS := 3
 const AIR_STRIKE_COST := 30
@@ -225,11 +229,16 @@ const LANDING := {
 ## Escalation ladder. budget: wave budget multiplier; civil/infra: how much the enemy values cities and
 ## strategic infrastructure; interval: turns between waves.
 const ESCALATION := [
-	{"name": "Gray Zone", "budget": 0.8, "civil": 0.15, "infra": 0.3, "interval": 4, "color": Color(0.55, 0.75, 1.0)},
-	{"name": "Quarantine", "budget": 1.0, "civil": 0.55, "infra": 0.6, "interval": 3, "color": Color(1.0, 0.82, 0.4)},
-	{"name": "Blockade", "budget": 1.05, "civil": 0.8, "infra": 1.4, "interval": 3, "color": Color(1.0, 0.6, 0.3)},
-	{"name": "Strikes", "budget": 1.1, "civil": 1.0, "infra": 1.3, "interval": 3, "color": Color(1.0, 0.42, 0.42)},
-	{"name": "Assault", "budget": 1.15, "civil": 1.1, "infra": 1.1, "interval": 2, "color": Color(1.0, 0.25, 0.35)},
+	{"name": "Gray Zone", "budget": 0.8, "civil": 0.15, "infra": 0.3, "interval": 4, "color": Color(0.55, 0.75, 1.0),
+		"desc": "Patrols, drones and pressure short of open war. Raids are small, probe your defenses and avoid towns."},
+	{"name": "Quarantine", "budget": 0.95, "civil": 0.55, "infra": 0.6, "interval": 3, "color": Color(1.0, 0.82, 0.4),
+		"desc": "Shipping is \"inspected\". Raids grow, military sites are fair game and decoy swarms appear."},
+	{"name": "Blockade", "budget": 1.0, "civil": 0.8, "infra": 1.4, "interval": 3, "color": Color(1.0, 0.6, 0.3),
+		"desc": "Ships are turned away: the LNG reserve drains a day every other turn. Power, cables and ports become targets."},
+	{"name": "Strikes", "budget": 1.0, "civil": 1.0, "infra": 1.3, "interval": 3, "color": Color(1.0, 0.42, 0.42),
+		"desc": "Ballistic salvos open every raid, aimed at runways, radars and launchers. Stealth fighters hunt emitters."},
+	{"name": "Assault", "budget": 1.0, "civil": 1.1, "infra": 1.1, "interval": 2, "color": Color(1.0, 0.25, 0.35),
+		"desc": "Landing groups sail for the beaches, raids come every 2 turns and LNG drains every turn. Sink the landing groups before they arrive."},
 ]
 const ESCALATION_THRESHOLDS := [18, 42, 64, 84]   # pressure needed for levels 1..4
 
@@ -287,17 +296,17 @@ const DIFFICULTY := {
 	},
 	"regular": {
 		"name": "Regular", "supplies": 130, "base": 16.5, "growth": 9.1, "waves": 10, "carriers": 2, "carrier_hp": 140,
-		"cities": 4, "interceptors": 24, "esc_rate": 6, "landings": 1, "landing_hp": 130, "salvo": 3, "score_mult": 1.0,
+		"cities": 4, "interceptors": 24, "esc_rate": 6, "landings": 1, "landing_hp": 130, "salvo": 2, "score_mult": 1.0,
 		"desc": "10 waves. A fair fight once you know your flak from your SAMs.",
 	},
 	"veteran": {
-		"name": "Veteran", "supplies": 110, "base": 20.0, "growth": 11.0, "waves": 10, "carriers": 2, "carrier_hp": 160,
-		"cities": 4, "interceptors": 20, "esc_rate": 7, "landings": 2, "landing_hp": 150, "salvo": 3, "score_mult": 1.25,
+		"name": "Veteran", "supplies": 110, "base": 19.8, "growth": 10.0, "waves": 10, "carriers": 2, "carrier_hp": 160,
+		"cities": 4, "interceptors": 20, "esc_rate": 6, "landings": 1, "landing_hp": 150, "salvo": 3, "score_mult": 1.25,
 		"desc": "10 heavier waves. The adaptive enemy punishes one-dimensional defenses.",
 	},
 	"commander": {
-		"name": "Commander", "supplies": 95, "base": 21.5, "growth": 11.5, "waves": 12, "carriers": 3, "carrier_hp": 180,
-		"cities": 4, "interceptors": 16, "esc_rate": 8, "landings": 2, "landing_hp": 170, "salvo": 4, "score_mult": 1.5,
+		"name": "Commander", "supplies": 100, "base": 19.5, "growth": 9.4, "waves": 12, "carriers": 3, "carrier_hp": 180,
+		"cities": 4, "interceptors": 18, "esc_rate": 6, "landings": 2, "landing_hp": 130, "salvo": 3, "score_mult": 1.5,
 		"desc": "12 waves and three carriers. The enemy commits everything. Score x1.5.",
 	},
 }

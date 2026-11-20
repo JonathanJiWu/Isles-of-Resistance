@@ -56,6 +56,7 @@ var repairs_used := 0
 var procured_turn := -1
 var landings_spawned := false
 var intel_rng := RandomNumberGenerator.new()
+var infra_names := {}            # names of the power station and cable landing, for rebuilding
 var forced_weather := ""        # a forecast storm that will arrive next turn
 
 var _sink = null                # event array receiving log events while resolving
@@ -96,9 +97,11 @@ func _setup(p_seed: int, p_difficulty: String) -> void:
 	if gen.get("power", Hex.INVALID) != Hex.INVALID:
 		var ps := _add_structure("power", gen["power"])
 		ps["name"] = Lore.POWER_NAMES[rng.randi_range(0, Lore.POWER_NAMES.size() - 1)]
+		infra_names["power"] = ps["name"]
 	if gen.get("cable", Hex.INVALID) != Hex.INVALID:
 		var cs2 := _add_structure("cable", gen["cable"])
 		cs2["name"] = Lore.CABLE_NAMES[rng.randi_range(0, Lore.CABLE_NAMES.size() - 1)]
+		infra_names["cable"] = cs2["name"]
 	var hubs: Array = [gen["capital"]]
 	var occupied: Array = [gen["capital"]]
 	for c in gen["cities"]:
@@ -433,6 +436,7 @@ func compute_visibility() -> void:
 		if naval_visible(lg):
 			lg["seen_pos"] = lg["pos"]
 			lg["seen_turn"] = turn
+			explored[lg["pos"]] = true
 
 
 func carrier_visible(c: Dictionary) -> bool:
@@ -579,10 +583,10 @@ func repair_crews() -> int:
 # Units
 # --------------------------------------------------------------------------------------------
 
-func units_from(sid: int) -> int:
+func units_from(sid: int, kind: String = "") -> int:
 	var n := 0
 	for u in units.values():
-		if u["home"] == sid:
+		if u["home"] == sid and (kind == "" or u["kind"] == kind):
 			n += 1
 	return n
 
@@ -596,7 +600,7 @@ func produce_check(sid: int, ukind: String) -> String:
 		return "Requires %s" % Defs.TECHS[def["tech"]]["name"]
 	if s["kind"] == "airbase" and not airbase_operational(s):
 		return "Runway cratered: repair the airbase first"
-	if units_from(sid) >= def["max_per"]:
+	if units_from(sid, ukind) >= def["max_per"]:
 		return "Limit of %d per %s" % [def["max_per"], Defs.structure_name(s["kind"])]
 	if supplies < def["cost"]:
 		return "Not enough supplies"
@@ -742,7 +746,7 @@ func boat_attack(uid: int, tid: int) -> Array:
 	var mult := 1.5 if has_tech("precision_strikes") else 1.0
 	var hit := _roll(0.8)
 	var vi := _open_volley(events)
-	events.append({"type": "strike", "weapon": "boat", "from": u["pos"], "to": t["pos"], "cid": tid, "hit": hit})
+	events.append({"type": "strike", "weapon": "boat", "from": u["pos"], "to": t["pos"], "cid": tid, "uid": uid, "hit": hit})
 	units.erase(uid)
 	events.append({"type": "destroyed", "tgt": "unit", "id": uid, "pos": u["pos"], "kind": u["kind"], "quiet": true})
 	if hit:
@@ -821,6 +825,47 @@ func relocate(sid: int, h: Vector2i) -> bool:
 	return true
 
 
+## Interceptors delivered each turn by the Halberd line (more while the Foundry stands).
+func interceptor_regen() -> int:
+	return 2 + (1 if story != null and story.foundry_alive(self) else 0)
+
+
+func landing_at(h: Vector2i) -> Dictionary:
+	for lg in landings.values():
+		if lg["pos"] == h and naval_visible(lg):
+			return lg
+	return {}
+
+
+func rebuild_check(h: Vector2i) -> String:
+	var kind: String = ruins.get(h, "")
+	if not Defs.REBUILD.has(kind):
+		return "Nothing to rebuild"
+	if phase != "player":
+		return "Only on your turn"
+	if not structure_of_kind(kind).is_empty():
+		return "Already have one"
+	if not structure_at(h).is_empty() or not unit_at(h).is_empty():
+		return "Hex is occupied"
+	if supplies < int(Defs.REBUILD[kind]):
+		return "Not enough supplies"
+	return ""
+
+
+func rebuild(h: Vector2i) -> Dictionary:
+	if rebuild_check(h) != "":
+		return {}
+	var kind: String = ruins[h]
+	supplies -= int(Defs.REBUILD[kind])
+	var s := _add_structure(kind, h)
+	s["hp"] = int(s["max_hp"] / 2)
+	s["name"] = infra_names.get(kind, "")
+	stats["built"] += 1
+	compute_visibility()
+	log_msg("%s rebuilt at half strength. Repair crews can finish the job." % Defs.structure_name(kind), "good")
+	return s
+
+
 func procure_check() -> String:
 	if phase != "player":
 		return "Only on your turn"
@@ -860,9 +905,22 @@ func brownout() -> bool:
 	if brownout_turns > 0:
 		return true
 	var ps := structure_of_kind("power")
-	if ps.is_empty() or ps["hp"] * 2 < ps["max_hp"]:
+	if not ps.is_empty() and ps["hp"] * 2 < ps["max_hp"]:
 		return true
 	return escalation() >= 2 and energy <= 0
+
+
+## Days of LNG used this turn. Under blockade and strikes a day every other turn, every turn once
+## the landing groups sail, and a day more while the power station is down (smaller plants burn it
+## faster). Below blockade the tankers get through and the reserve refills.
+func energy_drain() -> int:
+	var esc := escalation()
+	if esc < 2:
+		return -1 if energy < Defs.ENERGY_DAYS else 0
+	var d := 1 if (esc >= 4 or turn % 2 == 0) else 0
+	if structure_of_kind("power").is_empty():
+		d += 1
+	return d
 
 
 ## Communications degraded: cable landing lost or cut. Intelligence confidence drops a level.
@@ -1030,7 +1088,18 @@ func naval_by_id(id: int) -> Dictionary:
 
 
 func naval_visible(t: Dictionary) -> bool:
-	return has_tech("satellite_uplink") or visible_hexes.has(t["pos"])
+	if has_tech("satellite_uplink") or visible_hexes.has(t["pos"]):
+		return true
+	return landings.has(t["id"]) and _landing_tracked(t)
+
+
+## A landing group is a dozen large ships: coastal radars and patrols track it once it is within
+## LANDING_TRACK hexes of any of your sites.
+func _landing_tracked(lg: Dictionary) -> bool:
+	for s in structures.values():
+		if Hex.distance(s["pos"], lg["pos"]) <= Defs.LANDING_TRACK:
+			return true
+	return false
 
 
 func landing_known(lg: Dictionary) -> bool:
@@ -1152,10 +1221,8 @@ func start_player_turn() -> void:
 		brownout_turns = maxi(0, brownout_turns - 1)
 		comms_turns = maxi(0, comms_turns - 1)
 		confidence_turns = maxi(0, confidence_turns - 1)
-		if escalation() >= 2:
-			energy = maxi(0, energy - 1)
-		var made := 2 + (1 if story != null and story.foundry_alive(self) else 0)
-		interceptors = mini(Defs.INTERCEPTOR_CAP, interceptors + made)
+		energy = clampi(energy - energy_drain(), 0, maxi(energy, Defs.ENERGY_DAYS))
+		interceptors = mini(Defs.INTERCEPTOR_CAP, interceptors + interceptor_regen())
 	repairs_used = 0
 	supplies += income()
 	rp += rp_income()
@@ -1324,6 +1391,8 @@ func _ballistic_salvo(events: Array) -> void:
 		return
 	cands.sort_custom(func(a, b): return a[0] > b[0])
 	events.append({"type": "salvo_warning", "count": mini(n, cands.size())})
+	if story != null:
+		story.report["salvo"] = true
 	log_msg("BALLISTIC MISSILE LAUNCH DETECTED: %d inbound from the mainland." % mini(n, cands.size()), "bad")
 	for i in mini(n, cands.size()):
 		var target: Dictionary = cands[i][1]
@@ -1389,6 +1458,8 @@ func _ew_jamming(events: Array) -> void:
 		_damage_enemy(e, e["hp"], events, "ewar", st)
 	_close_volley(events, vi)
 	log_msg("Cicada jamming: %d drones lost their links." % victims.size(), "good")
+	if story != null:
+		story.report["jammed"] = int(story.report.get("jammed", 0)) + victims.size()
 
 
 ## Landing groups sail along their planned route; on arrival the target city falls.
@@ -1411,11 +1482,12 @@ func spawn_landings() -> void:
 			continue
 		var spawn := Hex.INVALID
 		var best := 999
+		var site_x := Hex.axial_to_offset(site).x
 		for h in cells:
 			var o := Hex.axial_to_offset(h)
-			if o.x < width - 2 or terrain(h) != "deep" or not carrier_at(h).is_empty():
+			if o.x < site_x + 4 or terrain(h) != "deep" or not carrier_at(h).is_empty():
 				continue
-			var d := absi(o.y - Hex.axial_to_offset(site).y)
+			var d := absi(Hex.distance(h, site) - 12) * 3 + absi(o.y - Hex.axial_to_offset(site).y)
 			if d < best:
 				best = d
 				spawn = h
@@ -1639,7 +1711,7 @@ func _check_end(events: Array) -> void:
 	elif carriers.is_empty():
 		result = "victory"
 		result_reason = "Every Harmony-class carrier lies at the bottom of the strait. The Quarantine is broken."
-	elif wave >= waves_total and enemies.is_empty():
+	elif wave >= waves_total and enemies.is_empty() and landings.is_empty():
 		result = "victory"
 		result_reason = "All %d waves repelled. Tessera still stands." % waves_total
 	if result != "":
@@ -2025,6 +2097,9 @@ func _destroy_structure(s: Dictionary, events: Array) -> void:
 		_:
 			stats["structures_lost"] += 1
 			log_msg("%s destroyed." % Defs.structure_name(s["kind"]), "bad")
+			if s["kind"] == "power":
+				brownout_turns = maxi(brownout_turns, 3)
+				log_msg("The grid is on emergency generation: rolling blackouts for 3 turns, and the LNG reserve will drain faster from now on.", "bad")
 	events.append({"type": "destroyed", "tgt": "structure", "id": s["id"], "pos": s["pos"], "kind": s["kind"]})
 	compute_visibility()
 	if s["kind"] == "capital":
@@ -2103,7 +2178,7 @@ func to_dict() -> Dictionary:
 		"energy": energy, "brownout_turns": brownout_turns, "comms_turns": comms_turns,
 		"confidence_turns": confidence_turns, "repairs_used": repairs_used, "procured_turn": procured_turn,
 		"landings_spawned": landings_spawned, "intel_seed": intel_rng.seed, "intel_state": intel_rng.state,
-		"forced_weather": forced_weather,
+		"forced_weather": forced_weather, "infra_names": infra_names,
 	}
 
 
@@ -2160,6 +2235,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	st.procured_turn = d.get("procured_turn", -1)
 	st.landings_spawned = d.get("landings_spawned", false)
 	st.forced_weather = d.get("forced_weather", "")
+	st.infra_names = d.get("infra_names", {})
 	st.intel_rng.seed = d.get("intel_seed", 1)
 	st.intel_rng.state = d.get("intel_state", 0)
 	st.ai = EnemyAI.new()

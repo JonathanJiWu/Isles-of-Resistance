@@ -20,6 +20,7 @@ func _init() -> void:
 	test_adaptive_ai()
 	test_lore_integrity()
 	test_campaign_story()
+	test_tension_systems()
 	test_full_campaigns()
 	if OS.get_cmdline_user_args().has("--balance"):
 		balance_report()
@@ -389,7 +390,7 @@ func test_lore_integrity() -> void:
 		check(not ids.has(entry["id"]), "codex id %s unique" % entry["id"])
 		ids[entry["id"]] = true
 		var tag: String = entry["unlock"]
-		var ok: bool = tag in ["start", "act0", "act1", "act2", "act3", "carrier_seen", "city_lost"] or tag.begins_with("flag:") or tag.begins_with("kill:") or tag.begins_with("tech:")
+		var ok: bool = tag in ["start", "act0", "act1", "act2", "act3", "carrier_seen", "city_lost", "esc0", "esc1", "esc2", "esc3", "esc4"] or tag.begins_with("flag:") or tag.begins_with("kill:") or tag.begins_with("tech:")
 		check(ok, "codex %s unlock tag %s is valid" % [entry["id"], tag])
 	for key in Lore.ENDINGS:
 		check(Lore.OUTLET_ENDINGS.has(key) and Lore.OUTLET_ENDINGS[key].size() == 3, "ending %s has three outlet takes" % key)
@@ -503,6 +504,342 @@ func test_campaign_story() -> void:
 		check(st2.story.ending(st2)["key"] == key, "ending %s reachable" % key)
 
 
+# --------------------------------------------------------------------------------------------
+
+func _first_land(st: GameState, kind: String, near: Vector2i, max_r: int = 6) -> Vector2i:
+	for r in range(1, max_r + 1):
+		for h in Hex.ring(near, r):
+			if st.tiles.has(h) and st.build_check(kind, h) == "" and st.unit_at(h).is_empty():
+				return h
+	return Hex.INVALID
+
+
+func _first_water_next_to(st: GameState, h: Vector2i) -> Vector2i:
+	for nb in Hex.neighbors(h):
+		if st.tiles.has(nb) and st.is_water(nb) and st.unit_at(nb).is_empty():
+			return nb
+	return Hex.INVALID
+
+
+func test_tension_systems() -> void:
+	section("escalation, sustainment & tension")
+	var c0 := checks
+	# ---- Escalation ladder with hysteresis.
+	var st := GameState.create(777, "regular")
+	check(st.escalation() == 1 and st.story.pressure == 30, "campaign starts at Quarantine with pressure 30")
+	st.story.add_pressure(st, 12)
+	check(st.escalation() == 2, "pressure 42 reaches Blockade")
+	st.story.add_pressure(st, -3)
+	check(st.escalation() == 2, "hysteresis: pressure 39 stays at Blockade")
+	st.story.add_pressure(st, -6)
+	check(st.escalation() == 1, "pressure 33 steps back down to Quarantine")
+	check(st.story.codex.has("quarantine"), "the starting rung's briefing is in the Intel Archive")
+
+	# ---- Energy: drain rules, refills, blackouts, rebuilding.
+	st = GameState.create(778, "regular")
+	st.energy = 6
+	check(st.energy_drain() == -1, "below Blockade the LNG reserve refills")
+	st.story.add_pressure(st, 40)
+	check(st.escalation() == 3, "pressure 70 reaches Strikes")
+	st.turn = 4
+	var even := st.energy_drain()
+	st.turn = 5
+	var odd := st.energy_drain()
+	check(even == 1 and odd == 0, "under Blockade/Strikes the reserve loses a day every other turn (%d, %d)" % [even, odd])
+	st.story.add_pressure(st, 20)
+	check(st.escalation() == 4 and st.energy_drain() == 1, "at Assault the reserve drains every turn")
+	check(not st.brownout(), "no blackouts while the grid and the reserve hold")
+	var inc_ok := st.income()
+	st.energy = 0
+	check(st.brownout(), "an empty LNG reserve under blockade means rolling blackouts")
+	check(st.income() < inc_ok, "blackouts cut income")
+	st.energy = 8
+	var ps := st.structure_of_kind("power")
+	check(not ps.is_empty() and st.infra_names.get("power", "") == ps["name"], "a named power station exists")
+	ps["hp"] = int(ps["max_hp"] / 2) - 1
+	check(st.brownout(), "a power station below half strength browns out the grid")
+	var ppos: Vector2i = ps["pos"]
+	st._destroy_structure(ps, [])
+	check(st.brownout_turns == 3 and st.brownout(), "losing the power station means three turns of blackouts")
+	check(st.energy_drain() == 2, "without the station the reserve drains a day faster")
+	st.supplies = 100
+	check(st.rebuild_check(ppos) == "", "the power station can be rebuilt from its ruins")
+	var rebuilt := st.rebuild(ppos)
+	check(not rebuilt.is_empty() and rebuilt["hp"] * 2 <= rebuilt["max_hp"] and rebuilt["name"] == st.infra_names["power"], "rebuilt at half strength under its old name")
+	check(st.supplies == 100 - int(Defs.REBUILD["power"]), "rebuilding costs %d supplies" % Defs.REBUILD["power"])
+	check(st.rebuild_check(ppos) != "", "only one power station")
+	var cs := st.structure_of_kind("cable")
+	check(not cs.is_empty() and not st.comms_degraded(), "the cable landing keeps communications up")
+	var conf_ok := st.intel_confidence()
+	cs["hp"] = 1
+	check(st.comms_degraded() and st.intel_confidence() <= conf_ok, "a broken cable landing degrades comms and intelligence")
+
+	# ---- Interceptor stockpile and procurement.
+	st = GameState.create(779, "regular")
+	check(st.interceptors == int(Defs.DIFFICULTY["regular"]["interceptors"]), "starting stockpile from the difficulty table")
+	st.supplies = 100
+	var stock0 := st.interceptors
+	check(st.procure_check() == "" and st.procure(), "an emergency interceptor order can be placed")
+	check(st.interceptors == stock0 + Defs.PROCURE_AMOUNT and st.supplies == 100 - Defs.PROCURE_COST, "the order adds interceptors and costs supplies")
+	check(st.procure_check() != "" and not st.procure(), "one emergency order per turn")
+	st.interceptors = Defs.INTERCEPTOR_CAP
+	st.procured_turn = -1
+	check(st.procure_check() == "Stockpile full", "the stockpile has a cap")
+	st.interceptors = 5
+	var t0 := st.turn
+	st.end_turn()
+	if st.result == "" and st.turn == t0 + 1:
+		check(st.interceptors >= 5 + st.interceptor_regen() - 4, "the Halberd line delivers interceptors every turn")
+	# SAM shots spend interceptors, and dry SAMs fall silent.
+	st = GameState.create(780, "regular")
+	st.techs["guided_missiles"] = true
+	st.supplies = 500
+	var sam_pos := _first_land(st, "sam", st.capital()["pos"])
+	var sam := st.build("sam", sam_pos)
+	check(not sam.is_empty(), "built a SAM site for the stockpile test")
+	if not sam.is_empty():
+		var b := st._add_enemy("bomber", sam_pos + Hex.DIRS[0], "East")
+		st.compute_visibility()
+		var before := st.interceptors
+		sam["shots_left"] = st.s_shots(sam)
+		var ev: Array = []
+		st._reaction_fire(ev)
+		var sam_shots := ev.filter(func(x): return x["type"] == "shot" and x.get("src_id", -1) == sam["id"]).size()
+		check(sam_shots >= 1 and st.interceptors == before - sam_shots, "each Longbow shot spends one interceptor")
+		st.interceptors = 0
+		sam["shots_left"] = st.s_shots(sam)
+		if not st.enemies.has(b["id"]):
+			st._add_enemy("bomber", sam_pos + Hex.DIRS[0], "East")
+		var ev2: Array = []
+		st._reaction_fire(ev2)
+		check(ev2.filter(func(x): return x["type"] == "shot" and x.get("src_id", -1) == sam["id"]).is_empty(), "with no interceptors left the Longbows cannot fire")
+
+	# ---- Shoot and scoot.
+	st = GameState.create(781, "regular")
+	st.techs["guided_missiles"] = true
+	st.supplies = 500
+	sam_pos = _first_land(st, "sam", st.capital()["pos"])
+	sam = st.build("sam", sam_pos)
+	if not sam.is_empty():
+		st.ai.reveal(sam["id"])
+		var sites := st.relocate_sites(sam["id"])
+		check(not sites.is_empty() and st.relocate_check(sam["id"]) == "", "a SAM site has places to relocate to")
+		var sup := st.supplies
+		var dest: Vector2i = sites[0]
+		check(st.relocate(sam["id"], dest), "relocation succeeds")
+		check(sam["pos"] == dest and Hex.distance(dest, sam_pos) <= Defs.RELOCATE_RANGE, "the site moved within range")
+		check(not st.ai.known.has(sam["id"]), "enemy planners lose track of a relocated site")
+		check(sam["redeploying"] and sam["acted"] and st.supplies == sup - Defs.RELOCATE_COST, "relocation costs supplies and the site must set up again")
+		check(st.relocate_check(sam["id"]) != "", "one move per turn")
+		st.end_turn()
+		if st.result == "":
+			check(not sam.get("redeploying", true), "the site is ready again the next turn")
+	check(Defs.MOBILE.has("missile") and Defs.MOBILE.has("ewar") and not Defs.MOBILE.has("radar"), "only launchers and jammers are mobile")
+
+	# ---- Ballistic salvos at the Strikes rung.
+	st = GameState.create(782, "veteran")
+	st.techs["guided_missiles"] = true
+	st.supplies = 800
+	var cap: Dictionary = st.capital()
+	var ab_pos := _first_land(st, "airbase", cap["pos"])
+	var ab := st.build("airbase", ab_pos)
+	st.story.add_pressure(st, 45)
+	check(st.escalation() == 3, "pressure 75 reaches Strikes")
+	if not ab.is_empty():
+		st.ai.known.clear()
+		var ev3: Array = []
+		st._ballistic_salvo(ev3)
+		check(ev3.is_empty(), "salvos only go for sites the enemy knows about")
+		st.ai.reveal(ab["id"])
+		var hp0: int = ab["hp"]
+		var stock := st.interceptors
+		var ev4: Array = []
+		st._ballistic_salvo(ev4)
+		var balls := ev4.filter(func(x): return x["type"] == "ballistic")
+		check(ev4.size() > 0 and ev4[0]["type"] == "salvo_warning" and balls.size() >= 1, "a salvo warns, then the missiles arrive")
+		check(st.interceptors == stock and balls.all(func(x): return not x["intercepted"]), "without Hit-to-Kill nothing can stop them")
+		check(not st.structures.has(ab["id"]) or ab["hp"] < hp0, "the runway takes the hit")
+		# With Hit-to-Kill a nearby Longbow tries, at two interceptors a shot.
+		var st2 := GameState.create(783, "veteran")
+		st2.techs["guided_missiles"] = true
+		st2.techs["hit_to_kill"] = true
+		st2.supplies = 800
+		var ab2 := st2.build("airbase", _first_land(st2, "airbase", st2.capital()["pos"]))
+		var sam2 := st2.build("sam", _first_land(st2, "sam", ab2["pos"] if not ab2.is_empty() else st2.capital()["pos"], 2))
+		if not ab2.is_empty() and not sam2.is_empty():
+			st2.ai.known.clear()
+			st2.ai.reveal(ab2["id"])
+			st2.interceptors = 20
+			var ev5: Array = []
+			st2._ballistic_salvo(ev5)
+			var tries := ev5.filter(func(x): return x["type"] == "ballistic" and x["by"] != Hex.INVALID).size()
+			check(tries >= 1 and st2.interceptors == 20 - tries * Defs.BMD_COST, "Hit-to-Kill Longbows engage salvos at %d interceptors per try" % Defs.BMD_COST)
+
+	# ---- Landing groups at Assault.
+	st = GameState.create(784, "regular")
+	st.story.add_pressure(st, 60)
+	check(st.escalation() == 4, "pressure 90 reaches Assault")
+	check(st.landings.size() == int(Defs.DIFFICULTY["regular"]["landings"]), "landing groups sail at Assault")
+	var objs := st.story.active_objectives(st).filter(func(o): return o["kind"] == "stop_landing")
+	check(objs.size() == st.landings.size(), "each landing group comes with an objective")
+	if not st.landings.is_empty():
+		var lg: Dictionary = st.landings.values()[0]
+		check(st.structures.has(lg["target"]) and not lg["path"].is_empty(), "the landing group has a target city and a route")
+		check(lg["path"].size() >= 8 and lg["path"].size() <= 30, "it starts a sensible distance out (%d hexes)" % lg["path"].size())
+		var p0: int = lg["path"].size()
+		var evm: Array = []
+		st._move_landings(evm)
+		check(lg["path"].size() == p0 - Defs.LANDING_SPEED, "landing groups sail %d hexes a turn" % Defs.LANDING_SPEED)
+		check(st.landing_eta(lg) == int(ceil(float(lg["path"].size()) / Defs.LANDING_SPEED)), "ETA follows the route")
+		var near := false
+		for s in st.structures.values():
+			if Hex.distance(s["pos"], lg["pos"]) <= Defs.LANDING_TRACK:
+				near = true
+		check(st.naval_visible(lg) == (near or st.visible_hexes.has(lg["pos"])), "coastal radars track landing groups near your sites")
+		# A strike from an airbase that can see it.
+		st.supplies = 500
+		st.weather = "clear"
+		var ab3_pos := _first_land(st, "airbase", st.structures[lg["target"]]["pos"])
+		var ab3 := st._add_structure("airbase", ab3_pos) if ab3_pos != Hex.INVALID else {}
+		lg["pos"] = lg["path"][maxi(0, lg["path"].size() - 3)]
+		st.compute_visibility()
+		if not ab3.is_empty() and st.strike_targets(ab3["id"]).has(lg["id"]):
+			var lhp: int = lg["hp"]
+			st.strike(ab3["id"], lg["id"])
+			check(not st.landings.has(lg["id"]) or lg["hp"] < lhp, "air strikes hit landing groups")
+		# Drone boats.
+		st.techs["naval_aa"] = true
+		st.techs["uncrewed_systems"] = true
+		var hb_pos := Hex.INVALID
+		for s in st.structures.values():
+			if s["kind"] == "harbor":
+				hb_pos = s["pos"]
+		if hb_pos == Hex.INVALID:
+			for h in st.explored:
+				if st.build_check("harbor", h) == "":
+					hb_pos = h
+					break
+			if hb_pos != Hex.INVALID:
+				st.build("harbor", hb_pos)
+		var hb := st.structure_at(hb_pos)
+		if not hb.is_empty() and st.landings.has(lg["id"]):
+			var boat := st.produce(hb["id"], "droneboat")
+			check(not boat.is_empty(), "a harbor launches drone boats once Uncrewed Systems is researched")
+			if not boat.is_empty():
+				lg["pos"] = _first_water_next_to(st, boat["pos"])
+				boat["moved"] = false
+				boat["attacked"] = false
+				st.compute_visibility()
+				if lg["pos"] != Hex.INVALID and st.boat_targets(boat).has(lg["id"]):
+					var lhp2: int = lg["hp"]
+					st.boat_attack(boat["id"], lg["id"])
+					check(not st.units.has(boat["id"]), "the drone boats are spent in the attack")
+					check(not st.landings.has(lg["id"]) or lg["hp"] <= lhp2, "the attack can only hurt the landing group")
+		# Victory waits for the invasion to be resolved.
+		st.wave = st.waves_total
+		st.enemies.clear()
+		var evv: Array = []
+		st._check_end(evv)
+		check(st.result == "" or st.landings.is_empty(), "no victory while a landing group is at sea")
+	# Arrival takes the town.
+	st = GameState.create(785, "regular")
+	st.story.add_pressure(st, 60)
+	if not st.landings.is_empty():
+		var lg2: Dictionary = st.landings.values()[0]
+		var city_id: int = lg2["target"]
+		lg2["path"] = []
+		var eva: Array = []
+		st._move_landings(eva)
+		check(not st.landings.has(lg2["id"]) and not st.structures.has(city_id), "a landing group that reaches the beach takes the town")
+		check(st.story.flags.has("beachhead"), "the beachhead is remembered")
+		st.story.update_objectives(st)
+		check(st.objectives.any(func(o): return o["kind"] == "stop_landing" and o["status"] == "failed"), "the stop-the-landing objective fails")
+	# Stepping back down the ladder turns the fleets around.
+	st = GameState.create(786, "regular")
+	st.story.add_pressure(st, 60)
+	var ids: Array = st.landings.keys()
+	st.story.add_pressure(st, -20)
+	check(st.escalation() == 3 and st.landings.is_empty(), "de-escalating below Assault turns the landing groups back")
+	st.story.update_objectives(st)
+	check(not ids.is_empty() and st.objectives.filter(func(o): return o["kind"] == "stop_landing").all(func(o): return o["status"] == "done"), "a turned-back landing counts as stopped")
+
+	# ---- Weather.
+	st = GameState.create(787, "regular")
+	st.weather = "storm"
+	var fake := {"kind": "interceptor", "home": -1}
+	check(st.unit_grounded(fake) != "", "storms ground interceptors")
+	st.next_wave_turn = st.turn
+	var w0 := st.wave
+	var nwt := st.next_wave_turn
+	st.end_turn()
+	check(st.wave == w0 and st.next_wave_turn == nwt + 1, "storms delay the raid by a turn")
+	check(st.weather_laser_penalty() >= 0.0 and EnvGen.weather_fx("fog") != "", "weather effects are described")
+
+	# ---- Forecasts and intelligence confidence.
+	st = GameState.create(788, "regular")
+	st.next_wave_turn = st.turn + 1
+	var rs := st.rng.state
+	st._update_forecast()
+	check(st.rng.state == rs, "forecasting never touches the combat RNG")
+	check(not st.forecast.is_empty() and st.forecast["eta"][0] <= st.forecast["eta"][1], "a forecast gives a window of turns")
+	check(st.forecast["size"][0] <= st.forecast["size"][1] and Defs.SECTORS.has(st.forecast["sector"]), "and a size range and a sector")
+	check(int(st.forecast["confidence"]) == st.intel_confidence(), "the forecast carries the current confidence")
+	st.confidence_turns = 3
+	st.techs["satellite_uplink"] = true
+	st._update_forecast()
+	check(st.intel_confidence() == 2 and st.forecast["eta"][0] == st.forecast["eta"][1], "high confidence pins down the timing")
+
+	# ---- Situations: every option of every situation applies cleanly.
+	var bad_text := 0
+	var applied := 0
+	for sid in Situations.SITUATIONS:
+		var d: Dictionary = Situations.SITUATIONS[sid]
+		check(Lore.PEOPLE.has(d["speaker"]), "situation %s has a known speaker" % sid)
+		for i in d["options"].size():
+			var s3 := GameState.create(790 + i, "regular")
+			s3.supplies = 500
+			s3.rp = 200
+			var esc_lo: int = d.get("esc", [0, 4])[0]
+			s3.story.add_pressure(s3, int(Defs.ESCALATION_THRESHOLDS[esc_lo - 1]) - s3.story.pressure if esc_lo > 0 else 0)
+			s3.story._start_situation(s3, sid)
+			if s3.story.fill_text(d["text"]).contains("{"):
+				bad_text += 1
+			var opt: Dictionary = d["options"][i]
+			if s3.story.option_check(s3, opt["effects"], opt) != "":
+				continue
+			if s3.choose_directive(i):
+				applied += 1
+				check(s3.story.pending == "", "%s option %d resolves the situation" % [sid, i])
+	check(bad_text == 0, "situation texts have no unfilled placeholders")
+	check(applied >= 25, "situation options apply (%d)" % applied)
+
+	# ---- Save and load keep the whole tension state.
+	st = GameState.create(799, "veteran")
+	st.techs["guided_missiles"] = true
+	st.story.add_pressure(st, 60)
+	st.interceptors = 13
+	st.energy = 4
+	st.brownout_turns = 2
+	st._update_forecast()
+	var data := st.to_dict()
+	var bytes := var_to_bytes(data)
+	var back := GameState.from_dict(bytes_to_var(bytes))
+	check(back != null and var_to_bytes(back.to_dict()) == bytes, "tension state survives a save round trip")
+	if back != null:
+		check(back.landings.size() == st.landings.size() and back.interceptors == 13 and back.energy == 4 and back.escalation() == 4, "landings, stocks, gas and escalation restored")
+		var b1 := TestBot.new(3)
+		var b2 := TestBot.new(3)
+		for i in 3:
+			if st.result != "":
+				break
+			b1.play_turn(st)
+			b2.play_turn(back)
+			st.end_turn()
+			back.end_turn()
+		check(var_to_bytes(st.to_dict()) == var_to_bytes(back.to_dict()), "a restored late-war game continues identically")
+	print("    %d checks" % (checks - c0))
+
+
 func test_full_campaigns() -> void:
 	section("full campaigns")
 	for diff in Defs.DIFFICULTY_ORDER:
@@ -525,11 +862,13 @@ func _run_campaign(sd: int, diff: String, skill: float, max_turns: int, strategy
 func balance_report() -> void:
 	print("")
 	var n := 24
-	print("Balance report (%d seeds per row; normal = full bot, novice = half-hearted bot)" % n)
 	var only := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):
 			only = a.substr(7)
+		if a.begins_with("--seeds="):
+			n = maxi(1, int(a.substr(8)))
+	print("Balance report (%d seeds per row; normal = full bot, novice = half-hearted bot)" % n)
 	for diff in Defs.DIFFICULTY_ORDER:
 		if only != "" and diff != only:
 			continue

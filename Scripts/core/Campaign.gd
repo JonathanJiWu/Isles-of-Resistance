@@ -17,6 +17,7 @@ var situations_seen := {}
 var killed_ids := {}
 var objective_seq := 0
 var sunk_landings := {}
+var withdrawn_landings := {}
 var situation_ctx := {}
 var ally := 50
 var flags := {}
@@ -76,12 +77,15 @@ func setup(st: GameState) -> void:
 		schedule.append([Lore.DIRECTIVE_ORDER[k], w])
 		prev = w
 	unlock("start")
+	unlock("esc%d" % escalation)
+	codex_unseen = 0
 	_enter_act(st, 0)
 	news = _make_news(st)
 
 
 func _reset_report() -> void:
-	report = {"kills": 0, "hits": 0, "cities_lost": [], "structures_lost": 0, "carriers_sunk": [], "wave": false, "city_hit": ""}
+	report = {"kills": 0, "hits": 0, "cities_lost": [], "structures_lost": 0, "carriers_sunk": [], "wave": false, "city_hit": "",
+		"jammed": 0, "salvo": false, "deescalated": false}
 
 
 func on_turn_start(st: GameState) -> void:
@@ -270,6 +274,9 @@ func on_wave_cleared(st: GameState, w: int) -> void:
 		st.supplies += ship
 		shipments += 1
 		st.log_msg("Hesperian arms shipment received: +%d supplies." % ship, "good")
+		if st.escalation() >= 2:
+			st.energy = mini(st.energy + 2, Defs.ENERGY_DAYS + 4)
+			st.log_msg("An escorted LNG tanker came in with the shipment: +2 days of gas.", "good")
 		if shipments == 1:
 			beats.append({"speaker": "whitlow", "text": Lore.BEATS["ally_shipment"]["text"]})
 
@@ -306,11 +313,23 @@ func on_enemy_phase_end(st: GameState, events: Array) -> void:
 		triggers.append("loss")
 	if report["hits"] >= 1:
 		triggers.append("hit")
+	if report.get("deescalated", false):
+		triggers.push_front("stand_down")
+	if report.get("salvo", false):
+		triggers.append("salvo")
+	if not st.landings.is_empty():
+		triggers.append("landing")
+	if int(report.get("jammed", 0)) > 0:
+		triggers.append("jammed")
 	if report["wave"]:
 		triggers.append("launch")
 	for e in st.enemies.values():
 		if e["kind"] == "stealth":
 			triggers.append("stealth")
+			break
+	for e in st.enemies.values():
+		if e["kind"] == "decoy":
+			triggers.append("decoy")
 			break
 	triggers.append("generic")
 	var said := 0
@@ -365,6 +384,8 @@ func escalation_name() -> String:
 func _set_escalation(st: GameState, lvl: int) -> void:
 	var up := lvl > escalation
 	escalation = lvl
+	if not up:
+		report["deescalated"] = true
 	var data: Dictionary = Situations.LADDER[lvl]
 	var text: String = data["up"] if up else data["down"]
 	st.log_msg("ESCALATION: %s." % escalation_name().to_upper() if up else "De-escalation: %s." % escalation_name(), "bad" if up else "good")
@@ -373,7 +394,14 @@ func _set_escalation(st: GameState, lvl: int) -> void:
 	unlock("esc%d" % lvl)
 	news.push_front("LPB · STRAIT ALERT: %s" % escalation_name().to_upper())
 	if lvl == 2 and up and st.energy >= Defs.ENERGY_DAYS:
-		st.log_msg("Blockade: the LNG reserve (%d days) now drains every turn. Convoys and decisions can refill it." % st.energy, "warn")
+		st.log_msg("Blockade: the LNG reserve (%d days) now drains a day every other turn, every turn once the landing groups sail. Shipments, convoys and decisions can refill it." % st.energy, "warn")
+	if lvl < 4 and not st.landings.is_empty():
+		for lg in st.landings.values():
+			withdrawn_landings[lg["id"]] = true
+		st.landings.clear()
+		st.landings_spawned = false
+		st.log_msg("The landing groups have turned back toward the mainland.", "good")
+		beats.append({"speaker": "ardent", "text": "The landing groups are turning around. They haven't been beaten; they've been told to wait. Use the time."})
 	if lvl == 4:
 		st.spawn_landings()
 		for lg in st.landings.values():
@@ -521,7 +549,7 @@ func update_objectives(st: GameState) -> void:
 					outcome = "failed"
 			"stop_landing":
 				if not st.landings.has(o["target"]):
-					outcome = "done" if _landing_sunk(st, o["target"]) else "failed"
+					outcome = "done" if (_landing_sunk(st, o["target"]) or withdrawn_landings.has(o["target"])) else "failed"
 		if outcome == "":
 			continue
 		o["status"] = outcome
@@ -930,7 +958,7 @@ func ending(st: GameState) -> Dictionary:
 # --------------------------------------------------------------------------------------------
 
 const _FIELDS := ["resolve", "escalation", "pressure", "last_situation_turn", "situations_seen", "killed_ids",
-	"objective_seq", "sunk_landings", "situation_ctx", "ally", "flags", "choices", "schedule", "next_directive", "pending", "budget_mods",
+	"objective_seq", "sunk_landings", "withdrawn_landings", "situation_ctx", "ally", "flags", "choices", "schedule", "next_directive", "pending", "budget_mods",
 	"glass", "foundry_id", "foundry_mult", "accuracy_bonus", "strike_lock_until", "no_new_types", "convoy",
 	"reveal_next", "act", "codex", "codex_unseen", "news", "beats", "ops_ready", "merge_used_wave", "shipments",
 	"last_decision", "used_intercepts", "report"]

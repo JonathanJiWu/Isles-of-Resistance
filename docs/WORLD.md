@@ -159,17 +159,27 @@ Characters are not mouthpieces for their nations. Each has a job, a fear and a b
 
 | Side | In-game unit | Notes |
 |---|---|---|
-| Commonwealth | **Magpie** recon drone | Swarm-built and runs firmware 0.9-beta. Its role is to find your defenses. |
-| Commonwealth | **Shrike** strike fighter | Hunts interceptors and escorts bombers. |
-| Commonwealth | **Mantis** gunship | Carrier-borne attack helicopter. Hunts air defenses. |
-| Commonwealth | **Monsoon** heavy bomber | The workhorse of the Quarantine. |
-| Commonwealth | **Needle** sea-skimmer | A cruise missile. Phased in from mid-campaign. |
-| Commonwealth | **Inkwash** stealth bomber | Invisible without phased-array radar. |
+| Commonwealth | **Magpie** ISR drone | High, slow and patient, running firmware 0.9.3-beta. It maps your defenses for the waves that follow. |
+| Commonwealth | **Paper Lantern** decoy | A retired jet turned into a cheap drone. On radar it looks like a bomber; its job is to make you waste interceptors. |
+| Commonwealth | **Kitefang** loitering munition | Homes on radars, SAM fire control and EW stations. |
+| Commonwealth | **Shrike** strike fighter | Multirole: escorts the raid, hunts interceptors and corvettes. |
+| Commonwealth | **Static** EW jet | Jams fire control near it. |
+| Commonwealth | **Skylark** AEW&C | Early-warning radar plane. Few, precious, and a priority target. |
+| Commonwealth | **Monsoon** missile bomber | Old and slow. Launches Needles from outside your guns and goes home. |
+| Commonwealth | **Needle** cruise missile | Fired by bombers, ships and mainland batteries. |
+| Commonwealth | **Inkwash** stealth fighter | Hunts emitters. Invisible without phased-array radar. |
+| Commonwealth | Rocket Force ballistic missiles | Open every raid once the war reaches Strikes. Only hit-to-kill Longbows can touch them. |
+| Commonwealth | Landing groups and **Mantis** attack helicopters | Assault ships, landing ships and escorts; the helicopters fly from them near the beach. |
 | Commonwealth | **Harmony-class carriers** | *CCS Patient Tide*, *CCS Unbroken Promise*, *CCS Recompletion*. |
 | Tessera | **Kestrel** interceptor squadrons | Old airframes with new pilots. |
 | Tessera | **Lantern-class** AA corvettes | Converted coast guard hulls. |
+| Tessera | **Swiftlet** drone boats | Explosive uncrewed boats, built in fishing-boat yards. |
+| Tessera | **Cicada** EW station | Truck-mounted jammer that turns drones into very expensive kites. |
 | Tessera | Flak batteries | The barrels are older than the gunners. |
-| Hesperia (licensed) | **Longbow** SAM, **Lumen** laser | Sold by Halberd Dynamics. The laser's license server is in Hesperia. |
+| Tessera | Power stations and cable landings | Twelve days of LNG, and the cables everything else depends on. |
+| Hesperia (licensed) | **Longbow** SAM, **Lumen** laser | Sold by Halberd Dynamics. Longbow interceptors come from a single line in Saltmere and never fast enough. The laser's license server is in Hesperia. |
+
+See [ROSTER_AUDIT.md](ROSTER_AUDIT.md) for how each of these maps to a role in the research and what changed.
 
 ---
 

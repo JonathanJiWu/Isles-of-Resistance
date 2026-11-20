@@ -119,7 +119,8 @@ func _draw() -> void:
 		EntityNodes.hp_bar(self, Vector2(0, -18), 24.0, float(hp) / max_hp, Defs.ENEMY_COLOR.lerp(Color.WHITE, 0.2))
 
 
-const _WINGSPAN := {"bomber": 15.0, "fighter": 9.0, "drone": 8.0, "stealth": 14.0, "gunship": 0.0, "missile": 0.0}
+const _WINGSPAN := {"bomber": 15.0, "fighter": 9.0, "drone": 8.0, "stealth": 14.0, "gunship": 0.0, "missile": 0.0,
+	"decoy": 8.0, "kitefang": 0.0, "jammer": 9.5, "aew": 13.0}
 
 
 func _draw_nav_lights(bob: Vector2) -> void:

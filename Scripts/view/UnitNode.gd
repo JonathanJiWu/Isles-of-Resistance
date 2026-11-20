@@ -71,6 +71,8 @@ func _draw() -> void:
 		var bob := Vector2(0, sin(_t * 2.2) * 1.5)
 		Icons.shadow(self, kind, Vector2(7, 11), heading, 1.15, alpha)
 		Icons.aircraft(self, kind, bob, heading, 1.15, _t, false, alpha)
+	elif kind == "droneboat":
+		Icons.droneboat(self, Vector2.ZERO, heading, 1.25, alpha, _t)
 	else:
 		var sway := sin(_t * 1.3) * 0.04
 		draw_arc(Vector2(-14, 0).rotated(heading), 6.0, heading + PI * 0.6, heading + PI * 1.4, 8, Color(1, 1, 1, 0.25), 1.5, true)

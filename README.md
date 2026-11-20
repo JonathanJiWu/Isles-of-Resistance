@@ -21,7 +21,7 @@ On macOS or Linux, [run it from source](#installation--setup) with Godot.
 ## Overview
 "Isles of Resistance" is a single-player turn-based defense game set in a fictional archipelago. The player defends their islands against an AI-controlled air invasion using strategic deployments on a hex-based map. The game features real-time battle animations, a research system, and an adaptive AI opponent.
 
-The Celestine Commonwealth's carrier groups are launching wave after wave of drones, fighters, gunships, heavy bombers, cruise missiles and stealth bombers at your islands. Build air defenses, run reconnaissance, research new weapons, and decide when to strike back at the carriers themselves. Keep your Capital standing until every wave is repelled, or sink the whole fleet to end the war early. Between waves, the war's politics come to your desk.
+The Celestine Commonwealth is climbing an escalation ladder, from gray-zone pressure through quarantine, blockade and missile strikes to an amphibious assault. Its raids mix reconnaissance drones, decoy swarms, loitering munitions, fighters, jammers, early-warning planes, missile bombers, cruise and ballistic missiles and stealth fighters. Build air defenses, protect the gas and the cables, ration your interceptors, run reconnaissance, research new weapons, and decide when to strike back at the carriers and landing fleets. Keep your Capital standing until every wave is repelled, or sink the whole fleet to end the war early. Between waves, the war's politics, and its emergencies, come to your desk.
 
 ## Setting
 *A neon-lit, near-future ocean. The old order is buffering.*
@@ -51,8 +51,12 @@ The setting draws on contemporary themes (contested sovereignty, maritime chokep
 - **Adaptive enemy AI.** The enemy has its own fog of war: it only knows what its aircraft have seen, plus any defense that fired at them.
   - It routes around known air defenses and remembers where it took losses.
   - It shifts its approach vector between waves.
-  - It re-balances each wave against your favorite weapons: low-altitude gunships against SAM networks, high bombers over flak belts, fighter escorts once interceptors appear.
+  - It re-balances each wave against your favorite weapons: decoy swarms and low munitions against SAM networks, standoff missile bombers over flak belts, anti-radiation drones against radars, fighter escorts once interceptors appear.
   - Every wave comes with an HQ Intelligence report describing how the enemy is adapting.
+- **An escalation ladder.** Gray Zone, Quarantine, Blockade, Strikes, Assault. Raids and your own boldest choices push pressure up; restraint and diplomacy bring it down. Each rung changes what the enemy sends and what it will hit: decoys and loitering munitions, then jammers, cruise missiles and attacks on power and ports, then ballistic salvos against known bases, and finally landing groups racing for the beaches on a clock.
+- **Sustainment and uncertainty.** A national interceptor stockpile that every SAM shot draws down; an LNG reserve that drains under blockade, with rolling blackouts that darken lasers and jammers; a cable landing whose loss degrades intelligence; raid forecasts with a confidence level that widens or sharpens what you know; and shoot-and-scoot launchers that vanish from the enemy's target lists when they move.
+- **Situations.** Thirteen dynamic dilemmas (a tanker stopped for "inspection", an anchor dragged across the cables, an enemy pilot pulled from the sea, an evacuation under fire, a typhoon, a pause offer) with explicit trade-offs in supplies, gas, morale, alliances, intelligence and escalation. Some set timed objectives.
+- **Weather and seasons.** Every map has a theater and a season with its own weather: fog shortens vision, rain and haze degrade lasers, storms ground aircraft on both sides.
 - **A story that plays.** The campaign runs in four acts: *Quarantine*, *The Glass Shield*, *The Long Night* and *Terms*.
   - **Directives.** Eight political dilemmas from admirals, ministers, CEOs, hackers and back channels. Each option has explicit consequences, such as supplies, research, enemy wave strength and what the enemy knows, and each shapes the ending.
   - **Public Resolve** changes your income. **Hesperian Commitment** brings arms shipments after each repelled wave.
@@ -61,10 +65,14 @@ The setting draws on contemporary themes (contested sovereignty, maritime chokep
   - **A live news ticker** shows Commonwealth state media, Hesperian cable news, Lumen public radio, pirate radio and advertisers telling the same war differently.
   - **Intercepted pilot chatter** plays during battles, and the **Intel Archive** collects dossiers and contradictory documents.
   - **Epilogues** depend on how the war ended and what you traded to end it.
-- **Research system.** A 15-technology tree unlocks Longbow SAM Sites, Shelter Networks, Decoy Sites, Lantern-class corvettes, Missile Batteries and Lumen Lasers, plus many upgrades.
-- **Counterattacks.** Find the carriers hiding in the eastern sea, then hit them with Air Strikes from Airbases or Cruise Missiles from Missile Batteries. Every carrier sunk shrinks future waves.
+- **Research system.** An 18-technology tree unlocks Longbow SAM Sites, Shelter Networks, Decoy Sites, Lantern-class corvettes, Missile Batteries, Lumen Lasers, Cicada EW Stations, hit-to-kill interceptors and drone boats, plus many upgrades.
+- **Counterattacks.** Find the carriers hiding in the eastern sea, then hit them with Air Strikes from Airbases or Cruise Missiles from Missile Batteries. Every carrier sunk shrinks future waves. Landing groups can be hit the same way, and by drone boats from your harbors.
+- **Installations you can read at a glance.** Radar dishes turn, SAM launchers sit in revetments, the airbase has a runway, hangars and a tower, harbors have cranes and ships, the power station vents steam, and damage shows as scorched, broken structures.
+- **A living archipelago.** Roads and bridges, villages and rice paddies, lighthouses, wind farms, fish farms, a temple; shipping lanes whose traffic thins out as the blockade tightens; weather (rain, storms, fog banks, haze) and craters and scorch marks that build up where the war has been.
+- **Field Training.** A one-minute interactive tutorial at the start of your first campaign covers the situation, the camera, building, coverage and the objective. It can be skipped, and replayed from the main menu or Settings.
 - **Real-time battle animations.** Flak bursts, SAM trails, laser beams, dogfights, falling bombs, explosions and screen shake play out during the enemy phase. Skip them at any time with <kbd>Space</kbd>, speed them up, or turn them off in Settings.
 - **Neon night look.** Night-graded terrain, glowing coastlines, flickering city signage, searchlights over Lumen and Silica Point, and blinking navigation lights.
+- **Grounded in research.** Forces, escalation and pressures are modeled on open-source analysis of the Taiwan Strait at the level of roles and capabilities, then fictionalized. See [docs/RESEARCH.md](docs/RESEARCH.md) and the force audit in [docs/ROSTER_AUDIT.md](docs/ROSTER_AUDIT.md).
 - **Polish.** Animated title screen, four difficulty levels with an even ramp, autosave and Continue, a Hall of Fame, tutorial hints, an in-game How to Play guide, and settings for audio, animation speed and display.
 - **Music and sound.** Three procedurally composed music cues (title theme, a calm planning track and a driving battle track that crossfades in during the enemy phase) plus synthesized sound effects. The music is rendered on background threads on first launch and cached.
 - **No external assets.** All art is procedural vector drawing and every sound is synthesized in code. The only bundled asset is the [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) font (SIL OFL).
@@ -77,15 +85,16 @@ The setting draws on contemporary themes (contested sovereignty, maritime chokep
 
 ## How to Play
 1. **Build.** Pick a structure in the **CONSTRUCT** panel (or press <kbd>1</kbd>–<kbd>0</kbd>) and click a hex. Hover a button to see its stats, and hold <kbd>Shift</kbd> to place several.
-2. **Mind the altitude.** Flak shreds *low* flyers (drones, gunships, cruise missiles) but barely scratches *high* bombers. SAM Sites are the opposite, and Lasers hit everything. Radar coverage adds accuracy to every weapon firing into it.
+2. **Mind the altitude, and the price.** Flak shreds *low* flyers (loitering munitions, helicopters, cruise missiles) but barely scratches *high* aircraft. SAM Sites are the opposite, but every shot spends an interceptor, and decoys are built to make you waste them. Lasers and EW Stations handle drones cheaply at short range. Radar coverage adds accuracy to every weapon firing into it.
 3. **Research** (<kbd>R</kbd>). Guided Missiles (SAM Sites) is a strong first pick.
 4. **Read the intel.** Red dashed lines show where spotted aircraft are heading. The HQ Intelligence panel tells you how the enemy is adapting.
 5. **Fly interceptors.** Airbases train squadrons. Move them next to an enemy and attack, or leave them idle to patrol. Idle squadrons engage anything that comes within 2 hexes.
-6. **Strike back.** Fly a Recon Flight over the eastern sea, then hit spotted carriers from an Airbase (range 10) or a Missile Battery (range 12).
-7. **Decide.** Answer directives when they arrive. Check the ticker, the intercepts and the Intel Archive (<kbd>I</kbd>), and use Cyber Ops (<kbd>O</kbd>) when research allows.
-8. Press <kbd>Space</kbd> to end your turn.
+6. **Strike back.** Fly a Recon Flight over the eastern sea, then hit spotted carriers, and later landing groups, from an Airbase (range 10) or a Missile Battery (range 12).
+7. **Keep the island running.** Watch the interceptor stock and the escalation chip at the top, and the forecast, objectives, gas and comms in the intel panel. Move SAM sites and launchers the enemy has spotted, protect the power station and cable landing, and rebuild them if they fall.
+8. **Decide.** Answer directives and situations when they arrive. Check the ticker, the intercepts and the Intel Archive (<kbd>I</kbd>), and use Cyber Ops (<kbd>O</kbd>) when research allows.
+9. Press <kbd>Space</kbd> to end your turn.
 
-**Win** by surviving every wave or by sinking every carrier. **Lose** if your Capital falls.
+**Win** by surviving every wave (and seeing off any landing fleet at sea) or by sinking every carrier. **Lose** if your Capital falls.
 
 ### Difficulty
 | Level | Waves | Carriers | Starting supplies | Notes |
@@ -93,9 +102,9 @@ The setting draws on contemporary themes (contested sovereignty, maritime chokep
 | Recruit | 8 | 2 | 150 | Light raids. Recommended for your first campaign. |
 | Regular | 10 | 2 | 130 | A fair fight once you know your flak from your SAMs. |
 | Veteran | 10 | 2 | 110 | Heavier waves that punish one-dimensional defenses. |
-| Commander | 12 | 3 | 95 | The enemy commits everything. Score x1.5. |
+| Commander | 12 | 3 | 100 | The enemy commits everything, and two landing fleets sail at Assault. Score x1.5. |
 
-Every wave is larger than the last, and new aircraft types (cruise missiles from wave 4, stealth bombers from wave 6) are phased in over several waves rather than all at once. The levels were tuned with simulated campaigns so each one is a similar step up from the previous one (`tests/run_tests.gd -- --balance` prints the numbers).
+Every wave is larger than the last, and new weapons arrive with the escalation ladder (decoys and loitering munitions at Quarantine, jammers and cruise missiles at Blockade, ballistic salvos at Strikes, landing groups at Assault), phased in over several waves rather than all at once. Escalation climbs faster on harder levels, and the interceptor stockpile starts smaller. The levels were tuned with simulated campaigns so each one is a similar step up from the previous one (`tests/run_tests.gd -- --balance` prints the numbers).
 
 ### Controls
 | Action | Input |

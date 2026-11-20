@@ -212,6 +212,16 @@ func _draw() -> void:
 				draw_line(tail, pos, Color(0.95, 0.95, 0.95), 2.4, true)
 				draw_circle(pos, 2.6, Color(1.0, 0.75, 0.3))
 				draw_circle(pos, 5.0, Color(1.0, 0.6, 0.2, 0.25))
+			"ballistic":
+				var tail := _shot_pos(s, maxf(k - 0.18, 0.0))
+				draw_line(tail, pos, Color(1.0, 0.75, 0.4, 0.35), 5.0, true)
+				draw_line(tail.lerp(pos, 0.5), pos, Color(1.0, 0.95, 0.8, 0.9), 2.0, true)
+				draw_circle(pos, 6.0, Color(1.0, 0.6, 0.25, 0.3))
+				draw_circle(pos, 2.6, Color(1.0, 1.0, 0.9))
+			"boat":
+				var dir2 := (s["b"] - s["a"]).normalized() as Vector2
+				draw_line(pos - dir2 * 14.0, pos, Color(0.85, 0.95, 1.0, 0.7), 2.0, true)
+				draw_circle(pos, 2.2, Color(0.3, 0.35, 0.4))
 			"bomb":
 				for j in 3:
 					var kk := clampf(k - j * 0.1, 0.0, 1.0)

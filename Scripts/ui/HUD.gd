@@ -15,6 +15,7 @@ signal ops_pressed
 signal intel_pressed
 signal directive_pressed
 signal comms_dismissed
+signal procure_pressed
 
 const LEFT_W := 252.0
 const RIGHT_W := 316.0
@@ -59,6 +60,8 @@ var _comms_text: RichTextLabel
 var _intercept: PanelContainer
 var _intercept_label: RichTextLabel
 var _intercept_tween: Tween
+var _subtitle: Label
+var _procure_btn: Button
 
 
 func _init() -> void:
@@ -97,24 +100,26 @@ func _build_top_bar() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bar)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 16)
+	row.add_theme_constant_override("separation", 10)
 	bar.add_child(row)
 	var tb := VBoxContainer.new()
 	tb.add_theme_constant_override("separation", -5)
 	tb.alignment = BoxContainer.ALIGNMENT_CENTER
 	tb.add_child(UITheme.label("ISLES OF RESISTANCE", 18, UITheme.ACCENT, UITheme.font_bold))
-	tb.add_child(UITheme.label("TESSERA AIR DEFENSE COMMAND · %s" % Defs.DIFFICULTY[st.difficulty]["name"].to_upper(), 10, UITheme.TEXT_DIM, UITheme.font_semibold))
+	_subtitle = UITheme.label("%s · SCORE 0" % Defs.DIFFICULTY[st.difficulty]["name"].to_upper(), 10, UITheme.TEXT_DIM, UITheme.font_semibold)
+	tb.add_child(_subtitle)
 	row.add_child(tb)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(sp)
 	for k in [["supplies", Defs.GOLD, "Supplies: spent on construction, units, repairs and strikes. Income arrives each turn from your Capital, Cities and Harbors."],
 			["research", Color(0.6, 0.75, 1.0), "Research points: spend them in the Research tree [R]. Produced by your Capital and Research Labs."],
-			["turn", UITheme.TEXT, "Current turn."],
-			["wave", Defs.ENEMY_COLOR, "Enemy waves launched so far, and when the next one launches."],
+			["turn", UITheme.TEXT, "Current turn and today's weather."],
+			["wave", Defs.ENEMY_COLOR, "Enemy waves launched so far, and when intelligence expects the next one. Poor intelligence widens the window."],
+			["stock", Color(0.7, 0.88, 1.0), "Interceptor stockpile. Every Longbow SAM shot uses one; trying to stop a ballistic missile uses %d. The Halberd line in Saltmere delivers more each turn, and you can order an emergency batch from OPERATIONS. When it runs dry, the Longbows fall silent." % Defs.BMD_COST],
+			["alert", Color(1.0, 0.6, 0.3), ""],
 			["resolve", Defs.GOLD, "Public Resolve: Tessera's will to keep going. Defiant (75+) adds 10% income; Shaken (below 40) and Breaking (below 20) cut it. Losing cities hurts it; repelling waves, sinking carriers and some directives raise it."],
-			["ally", Color(0.55, 0.68, 1.0), "Hesperian Commitment: how much the Federation is willing to help. At 55+ every repelled wave brings an arms shipment, bigger the higher it goes."],
-			["score", Defs.GOLD, "Score: aircraft downed, waves repelled, carriers sunk, and a victory bonus."]]:
+			["ally", Color(0.55, 0.68, 1.0), "Hesperian Commitment: how much the Federation is willing to help. At 55+ every repelled wave brings an arms shipment, bigger the higher it goes."]]:
 		var chip := HBoxContainer.new()
 		chip.add_theme_constant_override("separation", 6)
 		chip.tooltip_text = k[2]
@@ -130,7 +135,7 @@ func _build_top_bar() -> void:
 		vb.add_child(s)
 		chip.add_child(vb)
 		row.add_child(chip)
-		_chips[k[0]] = [v, s]
+		_chips[k[0]] = [v, s, icon, chip]
 	var sp2 := Control.new()
 	sp2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(sp2)
@@ -198,6 +203,9 @@ func _build_left_panel() -> void:
 	_recon_btn.tooltip_text = "Fly a reconnaissance sortie: reveal a radius-%d area within %d hexes of your Capital or an Airbase until your next turn. Use it to find enemy carriers. Once per turn." % [Defs.RECON_RADIUS, Defs.RECON_RANGE]
 	_recon_btn.pressed.connect(func(): Audio.play("click"); recon_selected.emit())
 	vb.add_child(_recon_btn)
+	_procure_btn = _make_row_button("stock", "glyph", "Order Interceptors", str(Defs.PROCURE_COST))
+	_procure_btn.pressed.connect(func(): Audio.play("click"); procure_pressed.emit())
+	vb.add_child(_procure_btn)
 	_ops_btn = _make_row_button("cyber", "glyph", "Cyber Ops  [O]", "")
 	_ops_btn.tooltip_text = "Spend research points on hacking operations against the Commonwealth's networks."
 	_ops_btn.pressed.connect(func(): Audio.play("click"); ops_pressed.emit())
@@ -210,7 +218,7 @@ func _build_left_panel() -> void:
 
 func _make_row_button(kind: String, mode: String, text: String, cost: String) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(LEFT_W - 24, 38)
+	b.custom_minimum_size = Vector2(LEFT_W - 24, 34)
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var hb := HBoxContainer.new()
@@ -220,7 +228,7 @@ func _make_row_button(kind: String, mode: String, text: String, cost: String) ->
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hb.add_theme_constant_override("separation", 8)
 	b.add_child(hb)
-	var icon := IconRect.new(kind, mode, 34, 0.9)
+	var icon := IconRect.new(kind, mode, 30, 0.9)
 	if mode == "glyph":
 		icon.icon_scale = 1.3
 	hb.add_child(icon)
@@ -256,7 +264,7 @@ func _build_right_panel() -> void:
 	p.offset_left = -RIGHT_W - 10
 	p.offset_right = -10
 	p.offset_top = 84
-	p.offset_bottom = 640
+	p.offset_bottom = 560
 	add_child(p)
 	_info_scroll = ScrollContainer.new()
 	_info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -290,8 +298,9 @@ func _build_end_turn() -> void:
 	box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	box.offset_left = -RIGHT_W - 10
 	box.offset_right = -10
-	box.offset_top = -250
+	box.offset_top = -330
 	box.offset_bottom = -10
+	box.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	box.alignment = BoxContainer.ALIGNMENT_END
 	box.add_theme_constant_override("separation", 6)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -301,9 +310,9 @@ func _build_end_turn() -> void:
 	_intel_label = RichTextLabel.new()
 	_intel_label.bbcode_enabled = true
 	_intel_label.fit_content = true
-	_intel_label.add_theme_font_size_override("normal_font_size", 13)
-	_intel_label.add_theme_font_size_override("bold_font_size", 13)
-	_intel_label.add_theme_font_size_override("italics_font_size", 13)
+	_intel_label.add_theme_font_size_override("normal_font_size", 12)
+	_intel_label.add_theme_font_size_override("bold_font_size", 12)
+	_intel_label.add_theme_font_size_override("italics_font_size", 12)
 	_intel_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	intel.add_child(_intel_label)
 	box.add_child(intel)
@@ -495,26 +504,46 @@ func refresh() -> void:
 	_chips["supplies"][1].text = "+%d / turn" % st.income()
 	_chips["research"][0].text = str(st.rp)
 	_chips["research"][1].text = "+%d / turn" % st.rp_income()
+	_subtitle.text = "%s · SCORE %d" % [Defs.DIFFICULTY[st.difficulty]["name"].to_upper(), st.score]
 	_chips["turn"][0].text = "Turn %d" % st.turn
-	_chips["turn"][1].text = "%s phase" % ("Enemy" if _busy else "Your")
+	_chips["turn"][1].text = "%s · %s" % ["Enemy phase" if _busy else "Your phase", EnvGen.weather_name(st.weather)]
+	_chips["turn"][1].add_theme_color_override("font_color", Defs.WARN if st.weather in ["storm", "fog"] else UITheme.TEXT_DIM)
+	_chips["turn"][3].tooltip_text = "Turn %d. Weather: %s. %s\n%s" % [st.turn, EnvGen.weather_name(st.weather), EnvGen.weather_fx(st.weather), EnvGen.theater_title(st.env)]
 	_chips["wave"][0].text = "Wave %d/%d" % [st.wave, st.waves_total]
 	var cd := st.countdown()
+	var eta := wave_window()
 	if st.wave >= st.waves_total:
 		_chips["wave"][1].text = "final wave inbound" if not st.enemies.is_empty() else "all waves launched"
+		_chips["wave"][1].add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	elif eta[0] != eta[1]:
+		_chips["wave"][1].text = "expected turn %d-%d" % eta
+		_chips["wave"][1].add_theme_color_override("font_color", Defs.ENEMY_COLOR if eta[0] <= st.turn else Defs.WARN)
 	elif cd <= 0:
-		_chips["wave"][1].text = "next launches end of this turn"
+		_chips["wave"][1].text = "launches end of this turn"
 		_chips["wave"][1].add_theme_color_override("font_color", Defs.ENEMY_COLOR)
 	else:
-		_chips["wave"][1].text = "next launches end of turn %d" % st.next_wave_turn
+		_chips["wave"][1].text = "next: end of turn %d" % st.next_wave_turn
 		_chips["wave"][1].add_theme_color_override("font_color", Defs.WARN if cd == 1 else UITheme.TEXT_DIM)
+	_chips["stock"][0].text = "%d/%d" % [st.interceptors, Defs.INTERCEPTOR_CAP]
+	_chips["stock"][1].text = "+%d / turn" % st.interceptor_regen()
+	_chips["stock"][1].add_theme_color_override("font_color", Defs.BAD if st.interceptors < 6 else (Defs.WARN if st.interceptors < 12 else UITheme.TEXT_DIM))
+	var esc := st.escalation()
+	var ed: Dictionary = Defs.ESCALATION[esc]
+	_chips["alert"][0].text = ed["name"]
+	_chips["alert"][0].add_theme_color_override("font_color", ed["color"])
+	_chips["alert"][2].color = ed["color"]
+	_chips["alert"][2].queue_redraw()
+	_chips["alert"][1].text = "pressure %d%s" % [st.story.pressure, (" → %d" % Defs.ESCALATION_THRESHOLDS[esc]) if esc < 4 else ""]
+	var ladder: Array = []
+	for i in Defs.ESCALATION.size():
+		ladder.append(("▶ " if i == esc else "   ") + Defs.ESCALATION[i]["name"])
+	_chips["alert"][3].tooltip_text = "ESCALATION: %s (pressure %d/100)\n%s\n\n%s\n\nPressure rises with every raid and with provocative choices; restraint, pauses and diplomacy lower it." % [ed["name"], st.story.pressure, ed["desc"], "\n".join(ladder)]
 	_chips["resolve"][0].text = str(st.story.resolve)
-	_chips["resolve"][1].text = "%s · income x%.2f" % [st.story.resolve_label(), st.story.resolve_mult()]
+	_chips["resolve"][1].text = "%s · x%.2f" % [st.story.resolve_label(), st.story.resolve_mult()]
 	_chips["resolve"][1].add_theme_color_override("font_color", Defs.BAD if st.story.resolve < 40 else UITheme.TEXT_DIM)
 	_chips["ally"][0].text = str(st.story.ally)
 	var ship := st.story.shipment_size()
-	_chips["ally"][1].text = ("shipments +%d / wave" % ship) if ship > 0 else "no shipments"
-	_chips["score"][0].text = str(st.score)
-	_chips["score"][1].text = "%d carrier%s afloat" % [st.carriers.size(), "" if st.carriers.size() == 1 else "s"]
+	_chips["ally"][1].text = ("+%d / wave" % ship) if ship > 0 else "no shipments"
 	for kind in _build_buttons:
 		var b: Button = _build_buttons[kind]
 		var locked := st.build_locked_reason(kind)
@@ -535,6 +564,9 @@ func refresh() -> void:
 		b.set_pressed_no_signal(_active_build == kind)
 		b.tooltip_text = _structure_tooltip(kind, locked)
 	_recon_btn.disabled = _busy or st.result != "" or st.recon_used_turn == st.turn or st.supplies < Defs.RECON_COST
+	var pc := st.procure_check()
+	_procure_btn.disabled = _busy or st.result != "" or pc != ""
+	_procure_btn.tooltip_text = "Emergency order from the Halberd line: +%d interceptors for %d supplies, once per turn. Stockpile %d/%d.%s" % [Defs.PROCURE_AMOUNT, Defs.PROCURE_COST, st.interceptors, Defs.INTERCEPTOR_CAP, ("\n" + pc) if pc != "" else ""]
 	_ops_btn.disabled = _busy or st.result != ""
 	var ready_ops := 0
 	for op in Lore.OPS:
@@ -586,10 +618,21 @@ func _refresh_end_button() -> void:
 		_end_btn.add_theme_stylebox_override("normal", UITheme.box(Color(0.1, 0.36, 0.38, 0.97), UITheme.ACCENT, 2, 7))
 		_end_btn.add_theme_stylebox_override("hover", UITheme.box(Color(0.14, 0.46, 0.47, 1.0), Color.WHITE, 2, 7))
 		var cd := st.countdown()
-		if st.wave < st.waves_total and cd <= 0:
+		var eta := wave_window()
+		if st.wave < st.waves_total and eta[0] != eta[1] and eta[0] <= st.turn:
+			_end_sub.text = "Wave %d may launch when you end this turn  ·  SPACE" % (st.wave + 1)
+		elif st.wave < st.waves_total and cd <= 0:
 			_end_sub.text = "Wave %d launches when you end this turn  ·  SPACE" % (st.wave + 1)
 		else:
 			_end_sub.text = "Turn %d  ·  press SPACE to end turn" % st.turn
+
+
+## When intelligence expects the next wave: [first, last] turn. Exact when confidence is high.
+func wave_window() -> Array:
+	var fc: Dictionary = st.forecast
+	if not fc.is_empty() and fc.get("wave", 0) == st.wave + 1:
+		return fc["eta"]
+	return [st.next_wave_turn, st.next_wave_turn]
 
 
 func _refresh_intel() -> void:
@@ -599,8 +642,20 @@ func _refresh_intel() -> void:
 	for e in st.enemies.values():
 		if st.enemy_detected(e):
 			spotted += 1
-	lines.append("[b][color=#ff8a8a]ENEMY INTEL[/color][/b]   [color=#9fb0c2]%d aircraft airborne, %d spotted[/color]" % [st.enemies.size(), spotted])
-	if not r.is_empty():
+	var conf := st.intel_confidence()
+	var conf_col: String = ["#ff8a8a", "#ffd166", "#7ee2b8"][conf]
+	lines.append("[b][color=#ff8a8a]ENEMY INTEL[/color][/b]  [color=#9fb0c2]%d airborne, %d spotted · confidence [/color][color=%s]%s[/color]" % [st.enemies.size(), spotted, conf_col, GameState.confidence_label(conf)])
+	var fc: Dictionary = st.forecast
+	if not fc.is_empty() and st.wave < st.waves_total:
+		var eta: Array = fc["eta"]
+		var when := ("turn %d" % eta[0]) if eta[0] == eta[1] else ("turns %d-%d" % eta)
+		var size := ("%d" % fc["size"][0]) if fc["size"][0] == fc["size"][1] else ("%d-%d" % fc["size"])
+		lines.append("[color=#ffb37a][b]Forecast · wave %d[/b][/color] [color=#c8d3de]%s · %s aircraft · likely %s[/color]" % [fc["wave"], when, size, fc["sector"]])
+		if not fc["types"].is_empty():
+			lines.append("[color=#9fb0c2]Expect %s.[/color]" % ", ".join(fc["types"]))
+		elif conf == 0:
+			lines.append("[color=#9fb0c2]Composition unknown. Radar, recon, the satellite uplink or allied intel would sharpen this.[/color]")
+	elif not r.is_empty():
 		var sector: String = r["sector"] if r["sector"] != "" else "unknown vector"
 		lines.append("[color=#c8d3de]Wave %d: %d aircraft, %s.[/color]" % [r["wave"], r["count"], sector])
 		if not r["composition"].is_empty():
@@ -609,8 +664,28 @@ func _refresh_intel() -> void:
 				parts.append("%d %s" % [r["composition"][k], Defs.enemy_name(k)])
 			lines.append("[color=#9fb0c2]%s[/color]" % ", ".join(parts))
 		lines.append("[color=#8cb8ff][i]%s[/i][/color]" % r["doctrine"])
-	else:
-		lines.append("[color=#9fb0c2]No enemy aircraft launched yet. The first wave launches at the end of turn %d.[/color]" % st.next_wave_turn)
+	elif st.wave < st.waves_total:
+		lines.append("[color=#9fb0c2]No raids yet. Expect the first around turn %d.[/color]" % st.next_wave_turn)
+	for o in st.story.active_objectives(st):
+		var left: int = int(o["deadline"]) - st.turn
+		var due := ""
+		if o["kind"] != "stop_landing":
+			due = " · %s" % ("this turn" if left <= 0 else "%d turn%s left" % [left, "" if left == 1 else "s"])
+		elif st.landings.has(o["target"]):
+			var le := st.landing_eta(st.landings[o["target"]])
+			due = " · lands in %d turn%s" % [le, "" if le == 1 else "s"]
+		lines.append("[color=#ffd166][b]Objective[/b] %s%s[/color]" % [st.story.objective_title(st, o), due])
+	var status: Array = []
+	if st.brownout():
+		status.append("[color=#ff8a8a]rolling blackouts[/color]")
+	if st.comms_degraded():
+		status.append("[color=#ff8a8a]comms degraded[/color]")
+	if st.escalation() >= 2:
+		status.append(("[color=%s]LNG %d day%s[/color]" % ["#ff8a8a" if st.energy <= 3 else "#ffd166", st.energy, "" if st.energy == 1 else "s"]))
+	if not st.landings.is_empty():
+		status.append("[color=#ff6b6b]%d landing group%s at sea[/color]" % [st.landings.size(), "" if st.landings.size() == 1 else "s"])
+	status.append("%d carrier%s afloat" % [st.carriers.size(), "" if st.carriers.size() == 1 else "s"])
+	lines.append("[color=#9fb0c2]%s[/color]" % " · ".join(status))
 	_intel_label.text = "\n".join(lines)
 
 
@@ -750,7 +825,7 @@ func show_selection(h: Vector2i) -> void:
 		_info_title("No selection", "Click a hex for details")
 		_info_text("[color=#9fb0c2]Choose a structure in the [b]CONSTRUCT[/b] panel and click a hex to build it. Select your units and facilities to give orders.\n\n[b]Controls[/b]\nLeft click: select / build / order\nShift+click: keep building\nRight click or Esc: cancel\nWASD / arrows / right-drag: pan\nMouse wheel or Q/E: zoom\n1-0: quick build, R: research\nV: coverage, Tab: next unit\nI: Intel Archive, O: Cyber Ops\nSpace: end turn / skip[/color]")
 		return
-	if not st.explored.has(h):
+	if not st.explored.has(h) and st.landing_at(h).is_empty():
 		_info_title("Uncharted waters", "Unexplored")
 		_info_text("[color=#9fb0c2]Extend your vision with Radar Stations, frigates or a Recon Flight.[/color]")
 		return
@@ -770,6 +845,10 @@ func show_selection(h: Vector2i) -> void:
 	if not c.is_empty() and st.carrier_visible(c):
 		_show_carrier(c)
 		_sep()
+	var lg := st.landing_at(h)
+	if not lg.is_empty():
+		_show_landing(lg)
+		_sep()
 	var t: String = st.terrain(h)
 	var tdef: Dictionary = Defs.TERRAIN[t]
 	var o := Hex.axial_to_offset(h)
@@ -783,6 +862,9 @@ func show_selection(h: Vector2i) -> void:
 	_info_text("[color=#9fb0c2]%s[/color]" % tdef["desc"])
 	if st.ruins.has(h) and s.is_empty():
 		_info_text("[color=#c99]Ruins of a destroyed %s.[/color]" % Defs.structure_name(st.ruins[h]).to_lower())
+		if Defs.REBUILD.has(st.ruins[h]):
+			var rk: String = st.ruins[h]
+			_info_action("Rebuild %s  (%d)" % [Defs.structure_name(rk), Defs.REBUILD[rk]], st.rebuild_check(h), "rebuild", -1, "Bring it back at half strength. Strategic infrastructure cannot be built anywhere else.")
 
 
 func _show_structure(s: Dictionary) -> void:
@@ -815,6 +897,24 @@ func _show_structure(s: Dictionary) -> void:
 		rows.append(["Research", "+%d / turn" % (int(def.get("rp", 0)) + extra_rp)])
 	if s.get("foundry", false):
 		rows.append(["Glass Shield", "INTACT" if st.story.glass == "intact" else "CRACKED"])
+	match s["kind"]:
+		"sam":
+			rows.append(["Interceptor stock", "%d / %d" % [st.interceptors, Defs.INTERCEPTOR_CAP]])
+			if st.has_tech("hit_to_kill"):
+				rows.append(["Ballistic defense", "%d interceptors / try" % Defs.BMD_COST])
+		"power":
+			rows.append(["Grid", "ROLLING BLACKOUTS" if st.brownout() else "Normal"])
+			rows.append(["LNG reserve", "%d days%s" % [st.energy, " (draining)" if st.escalation() >= 2 else ""]])
+		"cable":
+			rows.append(["Communications", "DEGRADED" if st.comms_degraded() else "Normal"])
+			rows.append(["Intel confidence", GameState.confidence_label(st.intel_confidence())])
+		"ewar":
+			rows.append(["Jamming radius", "%d hexes" % int(def["aura"])])
+		"laser":
+			if st.weather_laser_penalty() > 0.0:
+				rows.append(["Weather", "-%d%% accuracy" % int(st.weather_laser_penalty() * 100)])
+			if st.brownout():
+				rows.append(["Power", "NO POWER: cannot fire"])
 	if s["kills"] > 0:
 		rows.append(["Aircraft downed", s["kills"]])
 	_info_stats(rows)
@@ -830,18 +930,26 @@ func _show_structure(s: Dictionary) -> void:
 			targeted_by.append(Defs.enemy_name(e["kind"]))
 	if not targeted_by.is_empty():
 		_info_text("[color=#ff8a8a][b]Targeted by:[/b] %s[/color]" % ", ".join(targeted_by))
+	if s.get("redeploying", false):
+		_info_text("[color=#ffd166]Setting up after relocating: it holds fire during the next raid.[/color]", 12)
+	if s["kind"] == "sam" and st.interceptors <= 0:
+		_info_text("[color=#ff6b6b]Out of interceptors: this battery cannot fire. Order more from OPERATIONS.[/color]", 12)
 	if s["hp"] < s["max_hp"]:
 		_info_action("Repair  (+%d HP for %d)" % [st.repair_amount(s), st.repair_cost(s)], st.repair_check(s["id"]), "repair", s["id"])
 	match s["kind"]:
 		"airbase":
 			var n := st.units_from(s["id"])
 			_info_action("Train Interceptor  (%d)  [%d/2]" % [Defs.UNITS["interceptor"]["cost"], n], st.produce_check(s["id"], "interceptor"), "train", s["id"], Defs.UNITS["interceptor"]["desc"])
-			_info_action("Air Strike on Carrier  (%d)" % Defs.AIR_STRIKE_COST, st.strike_check(s["id"]), "strike", s["id"], "Launch a strike package at a spotted carrier within %d hexes." % Defs.AIR_STRIKE_RANGE)
+			_info_action("Air Strike  (%d)" % Defs.AIR_STRIKE_COST, st.strike_check(s["id"]), "strike", s["id"], "Launch a strike package at a spotted carrier or landing group within %d hexes." % Defs.AIR_STRIKE_RANGE)
 		"harbor":
-			var n2 := st.units_from(s["id"])
+			var n2 := st.units_from(s["id"], "frigate")
 			_info_action("Commission Corvette  (%d)  [%d/2]" % [Defs.UNITS["frigate"]["cost"], n2], st.produce_check(s["id"], "frigate"), "frigate", s["id"], Defs.UNITS["frigate"]["desc"])
+			var nb := st.units_from(s["id"], "droneboat")
+			_info_action("Launch Drone Boats  (%d)  [%d/%d]" % [Defs.UNITS["droneboat"]["cost"], nb, Defs.UNITS["droneboat"]["max_per"]], st.produce_check(s["id"], "droneboat"), "boats", s["id"], Defs.UNITS["droneboat"]["desc"])
 		"missile":
-			_info_action("Launch Cruise Missile  (%d)" % Defs.MISSILE_COST, st.strike_check(s["id"]), "strike", s["id"], "Fire at a spotted carrier within %d hexes." % Defs.MISSILE_RANGE)
+			_info_action("Launch Cruise Missile  (%d)" % Defs.MISSILE_COST, st.strike_check(s["id"]), "strike", s["id"], "Fire at a spotted carrier or landing group within %d hexes." % Defs.MISSILE_RANGE)
+	if Defs.MOBILE.has(s["kind"]):
+		_info_action("Relocate  (%d)" % Defs.RELOCATE_COST, st.relocate_check(s["id"]), "relocate", s["id"], "Shoot and scoot: move up to %d hexes. Enemy planners lose track of it, but it holds fire during the next raid while it sets up." % Defs.RELOCATE_RANGE)
 	if def.get("build", false):
 		_info_action("Demolish  (+%d)" % st.demolish_refund(s), "", "demolish", s["id"], "Remove this structure and recover part of its cost.")
 
@@ -849,7 +957,10 @@ func _show_structure(s: Dictionary) -> void:
 func _show_unit(u: Dictionary) -> void:
 	var def: Dictionary = Defs.UNITS[u["kind"]]
 	var status := "Ready"
-	if u["kind"] == "interceptor":
+	var grounded := st.unit_grounded(u)
+	if grounded != "":
+		status = grounded
+	elif u["kind"] == "interceptor":
 		if u["attacked"]:
 			status = "Engaged this turn"
 		elif u["moved"]:
@@ -864,11 +975,16 @@ func _show_unit(u: Dictionary) -> void:
 	if u["kind"] == "interceptor":
 		rows.append(["Cannon damage", st.u_dmg(u)])
 		rows.append(["Patrol radius", "2 hexes"])
+	elif u["kind"] == "droneboat":
+		rows.append(["Strike damage", int(Defs.UNITS["droneboat"]["strike_dmg"] * (1.5 if st.has_tech("precision_strikes") else 1.0))])
+		rows.append(["Attack reach", "%d hex" % Defs.BOAT_RANGE])
 	else:
 		rows.append(["AA range", st.u_range(u)])
 		rows.append(["Shots / enemy phase", st.u_shots(u)])
 	_info_stats(rows)
-	if u["kind"] == "interceptor":
+	if u["kind"] == "droneboat":
+		_info_text("[color=#9fb0c2]Click a [color=#4fd1c5]highlighted hex[/color] to sail, or a [color=#ff6b6b]ringed carrier or landing group[/color] next to you to attack. The flotilla is spent in the attack; escorts stop about one in five.[/color]", 12)
+	elif u["kind"] == "interceptor":
 		_info_text("[color=#9fb0c2]Click a [color=#4fd1c5]highlighted hex[/color] to move, or a [color=#ff6b6b]ringed enemy[/color] to attack. Squadrons that hold fire engage the first enemy within 2 hexes during the enemy phase. Heals at an Airbase.[/color]", 12)
 	else:
 		_info_text("[color=#9fb0c2]Click a [color=#4fd1c5]highlighted hex[/color] to sail. Fires automatically during the enemy phase. Repairs next to a Harbor.[/color]", 12)
@@ -898,6 +1014,14 @@ func _show_enemy(e: Dictionary) -> void:
 			tgt = "leaving the area"
 	_info_stats([["Speed", "%d hexes / turn" % def["speed"]], ["Payload", def["dmg"] if def["dmg"] > 0 else "none"], ["Intent", tgt]])
 	_info_text("[color=#9fb0c2]%s[/color]" % def["desc"], 12)
+
+
+func _show_landing(lg: Dictionary) -> void:
+	var eta := st.landing_eta(lg)
+	_info_title(lg["name"], "Amphibious landing group", IconRect.new("landing", "glyph", 44, 1.3))
+	_info_hp(lg["hp"], lg["max_hp"], Defs.ENEMY_COLOR)
+	_info_stats([["Heading for", lg["target_name"]], ["Arrives", "in %d turn%s" % [eta, "" if eta == 1 else "s"]], ["Speed", "%d hexes / turn" % Defs.LANDING_SPEED]])
+	_info_text("[color=#9fb0c2]An assault ship, two tank landing ships and an escort. If it reaches the beach, %s falls. Hit it with air strikes, cruise missiles and drone boats; its escorts launch attack helicopters as it closes.[/color]" % lg["target_name"], 12)
 
 
 func _show_carrier(c: Dictionary) -> void:

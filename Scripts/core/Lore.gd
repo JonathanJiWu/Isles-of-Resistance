@@ -395,6 +395,28 @@ const INTERCEPTS := {
 	"kost_embarrassed": [
 		["Monsoon-2 · Sorei", "Half our birds grounded for 'maintenance irregularities'. So the leak was real. Good to know what we're flying."],
 	],
+	"salvo": [
+		["Rocket Force · Brigade 7", "Salvo away. Target list: runways, radars, launchers. The list was printed before the war. I hope the launchers read it."],
+		["Eastern Theater", "Conventional strike package authorized. The word 'conventional' is doing a great deal of work in that sentence."],
+		["Rocket Force · Brigade 7", "Reload time forty minutes. Their interceptor stock is finite. So is ours. Nobody wants to be the one who finds out whose is smaller."],
+	],
+	"landing": [
+		["Assault Group Lodestar", "Beach in two days. The marines are seasick and writing letters. I told them to write shorter letters."],
+		["Eastern Theater", "Landing groups proceeding. Media guidance: this is a homecoming. Say it with conviction."],
+		["Assault Group Bright Harvest", "The strait is wider than it looks on the Council's map. Everything is wider than it looks on the Council's map."],
+	],
+	"decoy": [
+		["Paper Lantern Control", "Forty lanterns away. Each one costs less than the missile they'll waste on it. That's the whole doctrine, comrades."],
+		["Paper Lantern Control", "Reminder: the lanterns are decoys. Do not salute them on the way past."],
+	],
+	"jammed": [
+		["Kitefang-12", "Lost the link. Lost navigation. Lost my sense of purpose. Diving at the last known coordinates out of spite."],
+		["Magpie Control", "Cicada jamming in the eastern sector. Half the swarm thinks it's Tuesday. The other half thinks it's a fishing boat."],
+	],
+	"stand_down": [
+		["Eastern Theater", "Operational tempo reduced per Council directive. Do not call it a pause. It is a rhythm."],
+		["Monsoon-2 · Sorei", "We're stood down tonight. First night in a month I'll sleep. I don't trust it, and I'm going to sleep anyway."],
+	],
 	"generic": [
 		["Monsoon-2 · Sorei", "My sister says the trains in Saltmere still run on time. Ours don't. Don't tell the Council I said that."],
 		["Magpie Control", "Drone 41 has identified its own carrier as hostile. Workaround: do not be the carrier."],
@@ -422,6 +444,22 @@ const BEATS := {
 # --------------------------------------------------------------------------------------------
 
 const CODEX := [
+	{"id": "ladder", "cat": "Briefings", "title": "The Ladder", "unlock": "start",
+		"text": "Staff College shorthand for how this war can grow: gray zone, quarantine, blockade, strikes, assault. Each rung costs the Commonwealth more, in money, in reputation and in the chance that the Federation stops being ambiguous, so its Council climbs only when it believes the next rung will work. Every raid we absorb pushes pressure up. So do our own boldest choices. Restraint, pauses and back channels can bring it down. Nobody controls the ladder alone, and that includes us."},
+	{"id": "gray_zone", "cat": "Briefings", "title": "Gray Zone", "unlock": "esc0",
+		"text": "Coast guard cutters shadowing ferries, drones that loiter just outside the line, a sand dredger that keeps anchoring on top of a cable. Nobody is shooting at people. The goal is exhaustion: make every response look like an overreaction, and make the lack of a response look like consent. The fishermen in Saltmere have a word for it that is not suitable for the evening news."},
+	{"id": "quarantine", "cat": "Briefings", "title": "Quarantine", "unlock": "esc1",
+		"text": "A quarantine is not a blockade, the Commonwealth's lawyers insist, because ships are only inspected, not stopped, and the inspectors are police, not sailors. The insurers in the Compact were not persuaded: war-risk premiums for the strait tripled in a week. A quarantine does not need to stop every ship. It only needs to make every captain ask whether this cargo is worth it."},
+	{"id": "blockade", "cat": "Briefings", "title": "Twelve Days of Gas", "unlock": "esc2",
+		"text": "Most of the island's electricity comes from imported liquefied gas, and the tanks at the terminals hold about twelve days. Coal and the reactors that were not decommissioned can stretch it; rationing can stretch it further. After that, the grid sheds load district by district. Under blockade the reserve loses a day every other turn, and every turn once the landing groups sail; lose the power station and the smaller plants burn it faster still. Escorted tankers, convoys and the occasional humiliating compromise buy days back. The lasers are the first thing to go dark."},
+	{"id": "strikes", "cat": "Briefings", "title": "Interceptor Arithmetic", "unlock": "esc3",
+		"text": "A ballistic missile costs a fraction of the interceptor that stops it, and the Rocket Force has more of them than Halberd can build Longbows in a year. Every intercept is a withdrawal from an account that refills slowly, by sea, through a blockade. The answer is not to shoot everything. It is to decide what must not be hit, move what can move, harden what cannot, and repair faster than they can reload. A runway is concrete. A crew is not."},
+	{"id": "assault", "cat": "Briefings", "title": "The Hundred Miles", "unlock": "esc4",
+		"text": "Amphibious assault is the hardest operation in war, and the strait is a hundred miles of it: weather windows of a few weeks a year, a handful of usable beaches, and every ship visible for two days before it arrives. The landing groups do not have to win the war. They have to reach one beach. Ours do not have to sink the fleet. They have to make sure no beach is ever quiet."},
+	{"id": "the_other_side", "cat": "Perspectives", "title": "Letters Home, Never Sent", "unlock": "esc3",
+		"text": "Recovered from a downed Monsoon bomber, in a pilot's notebook: “Mother, they told us the islanders would cheer. They are shooting with everything they have, and their radio announcer reads the names of the shelters before the names of the dead. I do not think anybody in the Council has listened to her. I listen every night. Do not tell my squadron leader.” The pilot was pulled from the water by a Saltmere fishing boat. His name is withheld at the request of the Compact."},
+	{"id": "own_goals", "cat": "Perspectives", "title": "What the Island Wants", "unlock": "esc2",
+		"text": "Tessera is not a chessboard. The Lantern Movement wants to be left alone and suspects that is impossible. The Harbor Party wants the trade that keeps the lights on and suspects it is being bought. Tile & Wafer wants the fabs untouched and the engineers paid. Fishermen want the cutters gone; insurers want them to stay where they can be photographed. Everyone wants the Federation to help, and almost nobody wants to owe it. The Cabinet answers to all of them, every turn, on live television."},
 	{"id": "tessera", "cat": "Factions", "title": "The Republic of Tessera", "unlock": "start",
 		"text": "An archipelago democracy of thirty million people and roughly as many opinions. Its emblem is a lantern over a mosaic tile, after the Lantern Spring that ended the Harbor Authority's martial law forty years ago. Politics divides three ways. The Lantern Movement wants sovereignty and suspects everyone. The Harbor Party wants peace and trade and is accused of wanting more. Tile & Wafer wants nothing near the cleanrooms to explode. Tessera wants Federation protection without Federation control, and Commonwealth trade without Commonwealth rule. On a good day it gets both."},
 	{"id": "celestine", "cat": "Factions", "title": "The Celestine Commonwealth", "unlock": "start",

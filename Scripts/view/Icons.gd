@@ -37,6 +37,14 @@ static func shape(kind: String) -> PackedVector2Array:
 			pts = _mirror([Vector2(10, 0), Vector2(-6, -15), Vector2(-8.5, -12.5), Vector2(-4.5, -6), Vector2(-7.5, -3.5), Vector2(-5, 0)])
 		"interceptor":
 			pts = _mirror([Vector2(13, 0), Vector2(2, -2.5), Vector2(-6, -10.5), Vector2(-9, -10.5), Vector2(-7, -2.5), Vector2(-10, -3), Vector2(-11.5, 0)])
+		"decoy":
+			pts = _mirror([Vector2(11, 0), Vector2(5, -1.6), Vector2(-1, -8), Vector2(-4, -8), Vector2(-3, -1.8), Vector2(-8, -4.5), Vector2(-10, -4.5), Vector2(-9, 0)])
+		"kitefang":
+			pts = _mirror([Vector2(7, 0), Vector2(3, -1.2), Vector2(-4, -6.5), Vector2(-6, -6.5), Vector2(-4.5, -1.2), Vector2(-6, 0)])
+		"jammer":
+			pts = _mirror([Vector2(12, 0), Vector2(3, -2.2), Vector2(-1, -9.5), Vector2(-5, -9.5), Vector2(-4, -2.5), Vector2(-8, -5), Vector2(-10.5, -5), Vector2(-9, 0)])
+		"aew":
+			pts = _mirror([Vector2(12, 0), Vector2(9, -1.8), Vector2(1, -2), Vector2(0, -13), Vector2(-3, -13), Vector2(-3, -2), Vector2(-9, -2), Vector2(-11, -5.5), Vector2(-12.5, -5.5), Vector2(-12, 0)])
 		"gunship":
 			pts = PackedVector2Array()
 			for i in 14:
@@ -106,6 +114,23 @@ static func aircraft(ci: CanvasItem, kind: String, c: Vector2, rot: float, s: fl
 			var back := c + Vector2.RIGHT.rotated(rot) * -9.5 * s
 			var flame := PackedVector2Array([back + Vector2.UP.rotated(rot) * 1.5 * s, back - Vector2.UP.rotated(rot) * 1.5 * s, back - Vector2.RIGHT.rotated(rot) * 7.0 * s * flick])
 			ci.draw_colored_polygon(flame, Color(1.0, 0.7, 0.2, 0.9 * alpha))
+		"aew":
+			poly(ci, pts, fill, line)
+			var dome := c + Vector2(-2, 0).rotated(rot) * s
+			ci.draw_circle(dome, 5.4 * s, Color(0.85, 0.82, 0.8, alpha))
+			ci.draw_arc(dome, 5.4 * s, 0, TAU, 16, Color(line, line.a), 1.0 * s, true)
+			var sweep := Vector2.RIGHT.rotated(t * 2.2) * 5.0 * s
+			ci.draw_line(dome - sweep, dome + sweep, Color(fill, 0.9 * alpha), 1.6 * s, true)
+		"jammer":
+			poly(ci, pts, fill, line)
+			for side in [-1.0, 1.0]:
+				var pod := c + Vector2(-3.5, side * 9.0).rotated(rot) * s
+				ci.draw_circle(pod, 1.8 * s, Color(0.15, 0.1, 0.12, alpha))
+				ci.draw_circle(pod, 4.0 * s, Color(1.0, 0.35, 0.9, (0.12 + 0.08 * sin(t * 9.0 + side)) * alpha))
+		"kitefang":
+			poly(ci, pts, Color(0.62, 0.2, 0.24, alpha), line)
+			if fmod(t, 0.6) < 0.3:
+				ci.draw_circle(c + Vector2(6, 0).rotated(rot) * s, 1.2 * s, Color(1.0, 0.3, 0.3, alpha))
 		_:
 			poly(ci, pts, fill, line)
 			if kind == "bomber":
@@ -131,6 +156,22 @@ static func frigate(ci: CanvasItem, c: Vector2, rot: float, s: float, alpha: flo
 	poly(ci, deck, Color(Defs.PLAYER_COLOR, alpha), Color(0, 0, 0, 0))
 	ci.draw_circle(c + Vector2(9, 0).rotated(rot) * s, 2.4 * s, Color(0.2, 0.3, 0.33, alpha))
 	ci.draw_line(c + Vector2(9, 0).rotated(rot) * s, c + Vector2(14, 0).rotated(rot) * s, Color(0.2, 0.3, 0.33, alpha), 1.4 * s)
+
+
+## A flotilla of three explosive uncrewed boats in a vee, with white bow waves.
+static func droneboat(ci: CanvasItem, c: Vector2, rot: float, s: float, alpha: float = 1.0, t: float = 0.0) -> void:
+	var ax := Vector2.RIGHT.rotated(rot)
+	var nv := ax.orthogonal()
+	for k in 3:
+		var off: Vector2 = [Vector2(4, 0), Vector2(-4, -6), Vector2(-4, 6)][k]
+		var p := c + (ax * off.x + nv * off.y) * s
+		var bob := sin(t * 3.0 + k * 1.7) * 0.6
+		ci.draw_line(p - ax * 5.0 * s + nv * 1.5 * s, p - ax * 11.0 * s + nv * 3.5 * s, Color(1, 1, 1, 0.3 * alpha), 1.0 * s)
+		ci.draw_line(p - ax * 5.0 * s - nv * 1.5 * s, p - ax * 11.0 * s - nv * 3.5 * s, Color(1, 1, 1, 0.3 * alpha), 1.0 * s)
+		var hull := xform(PackedVector2Array([Vector2(6, 0), Vector2(2, -2), Vector2(-5, -2), Vector2(-5, 2), Vector2(2, 2)]), p + nv * bob, rot, s)
+		poly(ci, hull, Color(0.22, 0.27, 0.3, alpha), Color(0.04, 0.08, 0.1, alpha), 1.0)
+		ci.draw_circle(p + nv * bob + ax * 2.5 * s, 1.1 * s, Color(1.0, 0.55, 0.2, alpha))
+		ci.draw_circle(p + nv * bob - ax * 2.5 * s, 0.8 * s, Color(Defs.PLAYER_COLOR, alpha))
 
 
 static func carrier(ci: CanvasItem, c: Vector2, rot: float, s: float, alpha: float = 1.0) -> void:
@@ -249,6 +290,31 @@ static func structure(ci: CanvasItem, kind: String, c: Vector2, s: float, t: flo
 			var pulse := 0.5 + 0.5 * sin(t * 4.0)
 			ci.draw_circle(c + Vector2(0, -7) * s, (5.0 + pulse * 2.0) * s, Color(0.4, 1.0, 1.0, 0.25 * alpha))
 			ci.draw_circle(c + Vector2(0, -7) * s, 3.2 * s, Color(0.75, 1.0, 1.0, alpha))
+		"ewar":
+			# A jammer truck with a mast and radiating arcs.
+			ci.draw_rect(Rect2(c + Vector2(-8, 3) * s, Vector2(12, 5) * s), g)
+			ci.draw_rect(Rect2(c + Vector2(4, 4.5) * s, Vector2(4, 3.5) * s), g)
+			ci.draw_circle(c + Vector2(-5, 8.5) * s, 1.6 * s, Color(PLATE, alpha))
+			ci.draw_circle(c + Vector2(4, 8.5) * s, 1.6 * s, Color(PLATE, alpha))
+			ci.draw_line(c + Vector2(-2, 3) * s, c + Vector2(-2, -6) * s, g, 1.6 * s, true)
+			for k in 3:
+				var r := (3.0 + k * 2.6) * s
+				ci.draw_arc(c + Vector2(-2, -6) * s, r, -PI * 0.85, -PI * 0.15, 8, Color(acc, acc.a * (1.0 - k * 0.25)), 1.4 * s, true)
+		"power":
+			# Turbine hall with two stacks and a lightning bolt.
+			ci.draw_rect(Rect2(c + Vector2(-9, -1) * s, Vector2(18, 9) * s), g)
+			ci.draw_rect(Rect2(c + Vector2(-6, -9) * s, Vector2(3, 8) * s), g)
+			ci.draw_rect(Rect2(c + Vector2(3, -11) * s, Vector2(3, 10) * s), g)
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(1, 0) * s, c + Vector2(-3, 4.5) * s, c + Vector2(0, 4.5) * s,
+				c + Vector2(-1.5, 8) * s, c + Vector2(3, 3) * s, c + Vector2(0, 3) * s]), acc)
+		"cable":
+			# Landing station hut with a cable running into the sea and a relay mast.
+			ci.draw_rect(Rect2(c + Vector2(-8, -1) * s, Vector2(9, 8) * s), g)
+			ci.draw_line(c + Vector2(1, 5) * s, c + Vector2(10, 9) * s, acc, 2.0 * s, true)
+			ci.draw_line(c + Vector2(5, -10) * s, c + Vector2(5, 3) * s, g, 1.4 * s, true)
+			ci.draw_line(c + Vector2(2, 3) * s, c + Vector2(5, -10) * s, g, 1.0 * s, true)
+			ci.draw_line(c + Vector2(8, 3) * s, c + Vector2(5, -10) * s, g, 1.0 * s, true)
+			ci.draw_circle(c + Vector2(5, -10) * s, 1.6 * s, acc)
 
 
 static func _capital(ci: CanvasItem, c: Vector2, s: float, alpha: float) -> void:
@@ -357,6 +423,22 @@ static func ui_glyph(ci: CanvasItem, kind: String, c: Vector2, s: float, col: Co
 			ci.draw_rect(Rect2(c + Vector2(-8, -7) * s, Vector2(7, 3) * s), col)
 			for k in 3:
 				ci.draw_line(c + Vector2(-5, -1 + k * 3) * s, c + Vector2(5, -1 + k * 3) * s, col, 1.2 * s)
+		"stock":
+			for k in 2:
+				var x := -4.0 + k * 8.0
+				ci.draw_rect(Rect2(c + Vector2(x - 2, -4) * s, Vector2(4, 11) * s), col)
+				ci.draw_colored_polygon(PackedVector2Array([c + Vector2(x - 2, -4) * s, c + Vector2(x + 2, -4) * s, c + Vector2(x, -9) * s]), col.lightened(0.2))
+				ci.draw_line(c + Vector2(x - 2, 6) * s, c + Vector2(x - 4, 8) * s, col, 1.2 * s)
+				ci.draw_line(c + Vector2(x + 2, 6) * s, c + Vector2(x + 4, 8) * s, col, 1.2 * s)
+		"alert":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -9) * s, c + Vector2(9, 7) * s, c + Vector2(-9, 7) * s]), Color(col, 0.25))
+			ci.draw_polyline(PackedVector2Array([c + Vector2(0, -9) * s, c + Vector2(9, 7) * s, c + Vector2(-9, 7) * s, c + Vector2(0, -9) * s]), col, 1.6 * s, true)
+			for k in 3:
+				ci.draw_line(c + Vector2(-4 + k * 1.5, 4 - k * 4) * s, c + Vector2(4 - k * 1.5, 4 - k * 4) * s, col, 1.4 * s)
+		"landing":
+			for k in 3:
+				var p := c + Vector2(-5 + k * 5, -4 + (k % 2) * 6) * s
+				ci.draw_colored_polygon(PackedVector2Array([p + Vector2(-5, -1.5) * s, p + Vector2(3, -1.5) * s, p + Vector2(5, 0) * s, p + Vector2(3, 1.5) * s, p + Vector2(-5, 1.5) * s]), col)
 		"cyber":
 			ci.draw_rect(Rect2(c + Vector2(-9, -7) * s, Vector2(18, 14) * s), col, false, 1.6 * s)
 			ci.draw_polyline(PackedVector2Array([c + Vector2(-6, -3) * s, c + Vector2(-2, 0) * s, c + Vector2(-6, 3) * s]), col, 1.6 * s, true)

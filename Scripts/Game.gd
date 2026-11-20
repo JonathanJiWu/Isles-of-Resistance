@@ -2,7 +2,7 @@ extends Node2D
 ## Game scene controller: owns the GameState, builds the view, routes input and plays back
 ## the event streams produced by the simulation as (skippable) battle animations.
 
-enum Mode { IDLE, BUILD, UNIT, RECON, STRIKE, BUSY, OVER }
+enum Mode { IDLE, BUILD, UNIT, RECON, STRIKE, BUSY, OVER, RELOCATE }
 
 var state: GameState
 var mode := Mode.IDLE
@@ -11,6 +11,8 @@ var selected := Hex.INVALID
 var hover := Hex.INVALID
 var selected_unit := -1
 var strike_sid := -1
+var relocate_sid := -1
+var _reloc_sites := {}
 var show_coverage := false
 
 var world: Node2D
@@ -34,6 +36,7 @@ var s_nodes := {}
 var u_nodes := {}
 var e_nodes := {}
 var c_nodes := {}
+var l_nodes := {}
 var _reach := {}
 var _targets: Array = []
 var _animating := false
@@ -144,6 +147,14 @@ func _connect_hud() -> void:
 	hud.menu_pressed.connect(open_pause)
 	hud.ops_pressed.connect(open_ops)
 	hud.intel_pressed.connect(open_intel)
+	hud.procure_pressed.connect(func():
+		if state.procure():
+			Audio.play("build", -4.0)
+			hud.toast("+%d interceptors ordered" % Defs.PROCURE_AMOUNT)
+			sync_view()
+		else:
+			Audio.play("error")
+			hud.toast(state.procure_check()))
 	hud.directive_pressed.connect(func():
 		_directive_deferred = false
 		open_directive())
@@ -263,6 +274,28 @@ func sync_view() -> void:
 		n.seen_ago = state.turn - c["seen_turn"]
 		n.visible = vis or known
 		n.position = Hex.to_pixel(c["pos"] if vis else c["seen_pos"]) if n.visible else n.position
+	for id in l_nodes.keys():
+		if not state.landings.has(id):
+			l_nodes[id].queue_free()
+			l_nodes.erase(id)
+	for lg in state.landings.values():
+		var ln: LandingNode = l_nodes.get(lg["id"])
+		var lvis := state.naval_visible(lg)
+		var lknown := state.landing_known(lg)
+		if ln == null:
+			ln = LandingNode.new()
+			ln.setup(lg)
+			ghosts.add_child(ln)
+			l_nodes[lg["id"]] = ln
+		ln.hp = lg["hp"]
+		ln.max_hp = lg["max_hp"]
+		ln.eta = state.landing_eta(lg)
+		ln.ghost = not lvis
+		ln.visible = lknown
+		if lknown:
+			ln.position = Hex.to_pixel(lg["pos"] if lvis else lg["seen_pos"])
+			if not lg["path"].is_empty():
+				ln.heading = (Hex.to_pixel(lg["path"][0]) - Hex.to_pixel(lg["pos"])).angle()
 	if _last_ruins != state.ruins.size():
 		_last_ruins = state.ruins.size()
 		map_view.set_ruins(state.ruins)
@@ -421,7 +454,17 @@ func _on_hover_changed() -> void:
 	hud.set_tooltip(_hover_text(hover) if hover != Hex.INVALID and not _animating else "")
 
 
+func _hover_landing(h: Vector2i) -> String:
+	for lg in state.landings.values():
+		if lg["pos"] == h and state.landing_known(lg):
+			return "[b]%s[/b] · %d/%d HP · sailing for %s, ETA %d turn%s" % [lg["name"], lg["hp"], lg["max_hp"], lg["target_name"], state.landing_eta(lg), "" if state.landing_eta(lg) == 1 else "s"]
+	return ""
+
+
 func _hover_text(h: Vector2i) -> String:
+	var lt := _hover_landing(h)
+	if lt != "":
+		return lt
 	if not state.explored.has(h):
 		return "[b]Uncharted[/b]"
 	var lines: Array = []
@@ -505,17 +548,42 @@ func _on_left_click(h: Vector2i) -> void:
 			var events := state.recon_flight(h)
 			await _run_player_events(events)
 		Mode.STRIKE:
-			var c := state.carrier_at(h)
-			if c.is_empty() or not state.strike_targets(strike_sid).has(c["id"]):
+			var tid := _naval_at(h)
+			if tid < 0 or not state.strike_targets(strike_sid).has(tid):
 				Audio.play("error")
-				hud.toast("Select a spotted carrier within range")
+				hud.toast("Select a spotted carrier or landing group within range")
 				return
-			_do_strike(strike_sid, c["id"])
+			_do_strike(strike_sid, tid)
+		Mode.RELOCATE:
+			if not _reloc_sites.has(h):
+				Audio.play("error")
+				hud.toast(state.relocate_check(relocate_sid, h) if h != Hex.INVALID else "Pick a highlighted site")
+				return
+			var sid := relocate_sid
+			if state.relocate(sid, h):
+				Audio.play("jet", -8.0)
+				var n: StructureNode = s_nodes.get(sid)
+				if n != null:
+					effects.dust(n.position)
+					n.setup(state.structures[sid])
+					var tw := n.create_tween()
+					tw.tween_property(n, "position", _struct_pos(h), 0.45).set_trans(Tween.TRANS_SINE)
+				effects.dust(_struct_pos(h))
+				_set_mode(Mode.IDLE)
+				_select(h)
+				sync_view()
 		Mode.UNIT:
 			var u: Dictionary = state.units.get(selected_unit, {})
 			if u.is_empty():
 				_select(h)
 				return
+			if u["kind"] == "droneboat":
+				var tid := _naval_at(h)
+				if tid >= 0 and _targets.has(tid):
+					await _run_player_events(state.boat_attack(u["id"], tid))
+					_set_mode(Mode.IDLE)
+					sync_view()
+					return
 			for eid in _targets:
 				if state.enemies.has(eid) and state.enemies[eid]["pos"] == h:
 					await _do_attack(u["id"], eid)
@@ -526,6 +594,14 @@ func _on_left_click(h: Vector2i) -> void:
 			_select(h)
 		_:
 			_select(h)
+
+
+## Id of the carrier or landing group at a hex (visible or remembered), or -1.
+func _naval_at(h: Vector2i) -> int:
+	for t in state.naval_targets():
+		if t["pos"] == h:
+			return t["id"]
+	return -1
 
 
 func cancel() -> void:
@@ -561,6 +637,9 @@ func _set_mode(m: Mode) -> void:
 		_targets = []
 	if m != Mode.STRIKE:
 		strike_sid = -1
+	if m != Mode.RELOCATE:
+		relocate_sid = -1
+		_reloc_sites = {}
 	overlay_low.queue_redraw()
 	hud.set_tooltip(_hover_text(hover) if hover != Hex.INVALID else "")
 
@@ -584,7 +663,7 @@ func _select_unit(u: Dictionary) -> void:
 	selected_unit = u["id"]
 	selected = u["pos"]
 	_reach = state.unit_reachable(u)
-	_targets = state.unit_targets(u)
+	_targets = state.boat_targets(u) if u["kind"] == "droneboat" else state.unit_targets(u)
 	overlay_low.queue_redraw()
 
 
@@ -638,6 +717,18 @@ func _on_recon_selected() -> void:
 
 
 func _on_action(action: String, id: int) -> void:
+	if action == "rebuild" and not _animating and not _is_over():
+		var rs := state.rebuild(selected)
+		if rs.is_empty():
+			Audio.play("error")
+			hud.toast(state.rebuild_check(selected))
+		else:
+			Audio.play("build")
+			effects.dust(_struct_pos(selected))
+			map_view.set_ruins(state.ruins)
+			sync_view()
+			hud.show_selection(selected)
+		return
 	if _animating or _is_over() or not state.structures.has(id):
 		return
 	match action:
@@ -650,8 +741,23 @@ func _on_action(action: String, id: int) -> void:
 			if state.demolish(id):
 				Audio.play("explosion", -8.0)
 				effects.explosion(_struct_pos(pos), 0.6)
-		"train", "frigate":
-			var u := state.produce(id, "interceptor" if action == "train" else "frigate")
+		"relocate":
+			var sites := state.relocate_sites(id)
+			if state.relocate_check(id) != "" or sites.is_empty():
+				Audio.play("error")
+				hud.toast(state.relocate_check(id))
+				return
+			_set_mode(Mode.RELOCATE)
+			relocate_sid = id
+			_reloc_sites = {}
+			for h in sites:
+				_reloc_sites[h] = true
+			hud.toast("Pick a new site within %d hexes. The enemy will lose track of it." % Defs.RELOCATE_RANGE)
+			overlay_low.queue_redraw()
+			return
+		"train", "frigate", "boats":
+			var ukind: String = {"train": "interceptor", "frigate": "frigate", "boats": "droneboat"}[action]
+			var u := state.produce(id, ukind)
 			if not u.is_empty():
 				Audio.play("jet" if action == "train" else "build")
 				sync_view()
@@ -665,7 +771,7 @@ func _on_action(action: String, id: int) -> void:
 			elif targets.size() > 1:
 				_set_mode(Mode.STRIKE)
 				strike_sid = id
-				hud.toast("Select a carrier to strike")
+				hud.toast("Select a carrier or landing group to strike")
 	sync_view()
 	hud.show_selection(selected)
 
@@ -838,6 +944,10 @@ func play_events(events: Array) -> void:
 				await _wait(1.8 / sp)
 			"wave_cleared":
 				Audio.play("cleared")
+			"salvo_warning":
+				Audio.play("alarm")
+				hud.banner("BALLISTIC MISSILES INBOUND", Defs.ENEMY_COLOR, 1.2)
+				await _wait(0.9 / sp)
 			"intercept":
 				hud.show_intercept(ev["speaker"], ev["text"])
 			"log":
@@ -892,6 +1002,12 @@ func _anim_move(ev: Dictionary, dur: float) -> void:
 				c.visible = true
 				c.ghost = false
 				c.move_to(Hex.to_pixel(ev["to"]), dur)
+		"landing":
+			var ln: LandingNode = l_nodes.get(ev["id"])
+			if ln != null and ev["vis"]:
+				ln.visible = true
+				ln.ghost = false
+				ln.move_to(Hex.to_pixel(ev["to"]), dur * 1.5)
 
 
 func _anim_spawn(ev: Dictionary) -> void:
@@ -984,6 +1100,12 @@ func _launch(ev: Dictionary, follow: Array, delay: float, sp: float, token: int)
 					travel = 0.25 / sp
 		"strike":
 			travel = (0.9 if ev["weapon"] == "air" else 0.85) / sp
+		"ballistic":
+			travel = 0.75 / sp
+		"salvo":
+			travel = 0.2 / sp
+		"spawn":
+			travel = 0.05 / sp
 	var go := func():
 		if token != _token:
 			return
@@ -994,6 +1116,31 @@ func _launch(ev: Dictionary, follow: Array, delay: float, sp: float, token: int)
 				return
 			_impact(ev, follow, sp)
 		match ev["type"]:
+			"spawn":
+				_anim_spawn(ev)
+				on_hit.call()
+				return
+			"salvo":
+				var bn: AircraftNode = e_nodes.get(ev["id"])
+				var bp := bn.position if bn != null else _top(ev["from"])
+				if ev.get("vis", false):
+					Audio.play("rockets", -6.0)
+					effects.ring(bp, 4.0, 22.0, 0.35, Color(1.0, 0.7, 0.3, 0.8))
+				on_hit.call()
+				return
+			"ballistic":
+				b = _top(ev["to"])
+				a = b + Vector2(360, -620)
+				Audio.play("whistle", -2.0)
+				if ev["intercepted"] and ev["by"] != Hex.INVALID:
+					var meet := a.lerp(b, 0.72)
+					effects.projectile("ballistic", a, meet, travel, Color.WHITE, on_hit)
+					effects.projectile("missile", _struct_pos(ev["by"]) + Vector2(0, -6), meet, travel * 0.8, Color.WHITE, Callable(), 60.0)
+				else:
+					if ev["by"] != Hex.INVALID:
+						effects.projectile("missile", _struct_pos(ev["by"]) + Vector2(0, -6), a.lerp(b, 0.68) + Vector2(30, -10), travel * 0.8, Color.WHITE, Callable(), 60.0)
+					effects.projectile("ballistic", a, b, travel, Color.WHITE, on_hit)
+				return
 			"shot":
 				a = _src_pos(ev)
 				b = _dst_pos(ev)
@@ -1010,6 +1157,11 @@ func _launch(ev: Dictionary, follow: Array, delay: float, sp: float, token: int)
 					"laser":
 						Audio.play("laser", -3.0)
 						effects.beam(a, b, Color(0.4, 1.0, 1.0), 0.3)
+						effects.projectile("tracer", a, b, travel, Color(0, 0, 0, 0), on_hit)
+					"jam":
+						Audio.play("laser", -12.0)
+						effects.beam(a, b, Color(1.0, 0.4, 0.9), 0.35)
+						effects.sparkle(b, Color(1.0, 0.45, 0.9))
 						effects.projectile("tracer", a, b, travel, Color(0, 0, 0, 0), on_hit)
 					"cannon":
 						Audio.play("cannon", -5.0)
@@ -1050,13 +1202,23 @@ func _launch(ev: Dictionary, follow: Array, delay: float, sp: float, token: int)
 							effects.projectile("tracer", a, b + Vector2(randf_range(-6, 6), randf_range(-6, 6)), travel * (0.85 + q * 0.07), Color(1.0, 0.5, 0.4), on_hit if q == 0 else Callable())
 			"strike":
 				a = _top(ev["from"])
-				var cn: CarrierNode = c_nodes.get(ev["cid"])
+				var cn: Node2D = c_nodes.get(ev["cid"], l_nodes.get(ev["cid"]))
 				b = cn.position if cn != null else Hex.to_pixel(ev["to"])
 				if not hit:
 					b += Vector2(randf_range(-24, 24), randf_range(-16, 16))
 				if ev["weapon"] == "air":
 					Audio.play("jet")
 					effects.projectile("jet", a, b, travel, Color.WHITE, on_hit)
+				elif ev["weapon"] == "boat":
+					var bu: UnitNode = u_nodes.get(ev.get("uid", -1))
+					if bu != null:
+						a = bu.position
+						u_nodes.erase(ev["uid"])
+						bu.queue_free()
+					else:
+						a = Hex.to_pixel(ev["from"])
+					Audio.play("rockets", -6.0)
+					effects.projectile("boat", a, b, travel, Color.WHITE, on_hit)
 				else:
 					Audio.play("sam")
 					effects.projectile("missile", a, b, travel, Color.WHITE, on_hit, 90.0)
@@ -1097,7 +1259,7 @@ func _impact(ev: Dictionary, follow: Array, sp: float) -> void:
 				Audio.play("explosion", -4.0)
 				cam.shake(5.0 if ev["weapon"] == "bombs" or ev["weapon"] == "impact" else 2.5)
 		"strike":
-			var cn: CarrierNode = c_nodes.get(ev["cid"])
+			var cn: Node2D = c_nodes.get(ev["cid"], l_nodes.get(ev["cid"]))
 			p = cn.position if cn != null else Hex.to_pixel(ev["to"])
 			if hit:
 				effects.explosion(p, 1.1)
@@ -1105,6 +1267,18 @@ func _impact(ev: Dictionary, follow: Array, sp: float) -> void:
 			else:
 				effects.splash(p + Vector2(18, 10))
 				effects.float_text(p, "INTERCEPTED", Color(0.75, 0.8, 0.85), 13)
+		"ballistic":
+			p = _top(ev["to"])
+			if ev["intercepted"]:
+				var meet := (p + Vector2(360, -620)).lerp(p, 0.72)
+				effects.explosion(meet, 0.9)
+				effects.float_text(meet, "INTERCEPTED", Defs.GOOD, 15)
+				Audio.play("explosion", -6.0)
+			else:
+				effects.explosion(p, 1.4)
+				decals.add_crater(p + Vector2(randf_range(-10, 10), randf_range(-6, 8)), 5.5)
+				Audio.play("big_explosion", -3.0)
+				cam.shake(8.0)
 	_apply_follow(follow, sp)
 
 
@@ -1140,6 +1314,12 @@ func _apply_follow(follow: Array, _sp: float) -> void:
 							c.hp = f["hp"]
 							c.flash()
 							effects.float_text(c.position, "-%d" % f["dmg"], Defs.GOLD, 18)
+					"landing":
+						var ln: LandingNode = l_nodes.get(f["id"])
+						if ln != null:
+							ln.hp = f["hp"]
+							ln.flash()
+							effects.float_text(ln.position, "-%d" % f["dmg"], Defs.GOLD, 18)
 			"destroyed":
 				match f["tgt"]:
 					"enemy":
@@ -1185,6 +1365,24 @@ func _apply_follow(follow: Array, _sp: float) -> void:
 							cam.shake(12.0)
 							c.sink()
 						hud.banner("CARRIER SUNK", Defs.GOLD, 1.6)
+					"landing":
+						var ln2: LandingNode = l_nodes.get(f["id"])
+						if ln2 != null:
+							l_nodes.erase(f["id"])
+							if f.get("quiet", false):
+								effects.dust(ln2.position)
+								effects.dust(ln2.position + Vector2(14, -6))
+								Audio.play("alarm", -4.0)
+								hud.banner("ENEMY LANDING ASHORE", Defs.ENEMY_COLOR, 1.8)
+								cam.shake(6.0)
+								ln2.sink()
+							else:
+								effects.explosion(ln2.position, 1.6)
+								effects.explosion(ln2.position + Vector2(-12, 6), 1.0)
+								Audio.play("big_explosion")
+								cam.shake(10.0)
+								ln2.sink()
+								hud.banner("LANDING GROUP DESTROYED", Defs.GOLD, 1.6)
 			"exit":
 				var n2: AircraftNode = e_nodes.get(f["id"])
 				if n2 != null:
@@ -1254,6 +1452,21 @@ func _draw_low(l: DrawLayer) -> void:
 			for h in area:
 				l.hex_fill(h, _top(h), Color(Defs.GOLD if ok else Defs.ENEMY_COLOR, 0.14))
 			l.region_outline(area, tiles, Color(Defs.GOLD if ok else Defs.ENEMY_COLOR, 0.9), 2.0)
+	if mode == Mode.RELOCATE:
+		for h in _reloc_sites:
+			l.hex_fill(h, _top(h), Color(UITheme.ACCENT, 0.18))
+		l.region_outline(_reloc_sites, tiles, Color(UITheme.ACCENT, 0.85), 2.0)
+		if hover != Hex.INVALID and _reloc_sites.has(hover):
+			l.hex_fill(hover, _top(hover), Color(UITheme.ACCENT, 0.35))
+	# Objective markers.
+	for o in state.story.active_objectives(state):
+		if o["kind"] == "evacuate" and state.structures.has(o["target"]):
+			l.hex_outline(_top(state.structures[o["target"]]["pos"]), Color(Defs.GOLD, 0.85), 3.0, 1.0)
+	if mode == Mode.UNIT and selected_unit >= 0 and state.units.get(selected_unit, {}).get("kind", "") == "droneboat":
+		for tid in _targets:
+			var t := state.naval_by_id(tid)
+			if not t.is_empty():
+				l.draw_arc(Hex.to_pixel(t["pos"]), 28.0, 0, TAU, 32, Color(Defs.ENEMY_COLOR, 0.9), 2.5, true)
 	if mode == Mode.STRIKE and strike_sid >= 0 and state.structures.has(strike_sid):
 		var s: Dictionary = state.structures[strike_sid]
 		l.region_outline(_weapon_range_set(s["pos"], state.strike_range(s)), tiles, Color(Defs.ENEMY_COLOR, 0.5), 1.5)
@@ -1279,6 +1492,19 @@ func _draw_top(l: DrawLayer) -> void:
 			l.hex_outline(c, Color(1.0, 0.45, 0.75, 0.55 + 0.4 * pulse), 3.0, 3.0 - pulse * 2.0)
 			var tip := c + Vector2(0, -44 - pulse * 6.0)
 			l.draw_colored_polygon(PackedVector2Array([tip + Vector2(-8, -10), tip + Vector2(8, -10), tip]), Color(1.0, 0.45, 0.75, 0.9))
+	# Landing groups: their route to the beach, and the town they are sailing for.
+	for lg in state.landings.values():
+		if not state.landing_known(lg):
+			continue
+		var pts := PackedVector2Array([Hex.to_pixel(lg["pos"] if state.naval_visible(lg) else lg["seen_pos"])])
+		for h in lg["path"]:
+			pts.append(Hex.to_pixel(h))
+		for i in range(pts.size() - 1):
+			if i % 2 == 0:
+				l.draw_line(pts[i], pts[i + 1], Color(Defs.ENEMY_COLOR, 0.55), 2.0, true)
+		var city: Dictionary = state.structures.get(lg["target"], {})
+		if not city.is_empty():
+			l.hex_outline(_top(city["pos"]), Color(Defs.ENEMY_COLOR, 0.7), 2.5, 4.0)
 	if Settings.show_intents and not _animating:
 		for e in state.enemies.values():
 			if e["state"] == "rtb" or not state.enemy_detected(e):

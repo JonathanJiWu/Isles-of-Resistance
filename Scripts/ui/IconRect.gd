@@ -33,6 +33,8 @@ func _draw() -> void:
 		"unit":
 			if kind == "frigate":
 				Icons.frigate(self, c, -PI * 0.15, icon_scale, a)
+			elif kind == "droneboat":
+				Icons.droneboat(self, c, -PI * 0.15, icon_scale * 1.3, a)
 			else:
 				Icons.aircraft(self, kind, c, -PI * 0.25, icon_scale, 0.0, false, a)
 		"aircraft":

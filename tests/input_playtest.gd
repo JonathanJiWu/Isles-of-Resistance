@@ -29,6 +29,7 @@ func _init() -> void:
 	await _turn_flow()
 	await _air_flow()
 	await _recon_flow()
+	await _tension_flow()
 	await _pause_flow()
 	await _continue_flow()
 	await _game_over_flow()
@@ -535,6 +536,63 @@ func _recon_flow() -> void:
 	await until(func(): return not game._animating, 10.0)
 	check(st.recon_used_turn == st.turn, "clicking a hex flies the recon mission")
 	check(st.visible_hexes.has(target), "the recon area is revealed")
+
+
+func _tension_flow() -> void:
+	print("- escalation, stockpile, shoot-and-scoot, situations")
+	await story()
+	# The top bar must fit the window: every chip and button visible.
+	var bar_row: Control = game.hud._chips["supplies"][3].get_parent()
+	check(bar_row.get_combined_minimum_size().x + 28.0 <= root.get_visible_rect().size.x, "the top bar fits the window (%d px)" % int(bar_row.get_combined_minimum_size().x))
+	var menu_btn := find_button(bar_row, "Menu")
+	check(menu_btn != null and menu_btn.get_global_rect().end.x <= root.get_visible_rect().size.x + 0.5, "the Menu button is on screen")
+	check(game.hud._chips["alert"][0].text == Defs.ESCALATION[st.escalation()]["name"], "the alert chip shows the escalation rung")
+	# Emergency interceptor order.
+	st.supplies += 200
+	st.procured_turn = -1
+	game.sync_view()
+	var stock: int = st.interceptors
+	await click(center_of(game.hud._procure_btn))
+	check(st.interceptors == mini(stock + Defs.PROCURE_AMOUNT, Defs.INTERCEPTOR_CAP), "Order Interceptors adds to the stockpile")
+	check(game.hud._chips["stock"][0].text.begins_with(str(st.interceptors)), "the stock chip updates")
+	# Shoot and scoot: build a Longbow, then move it with the panel's Relocate button.
+	st.techs["guided_missiles"] = true
+	game.hud.refresh()
+	await click(center_of(game.hud.build_button("sam")))
+	var spot := build_spot("sam")
+	await click(hex_screen(spot))
+	await key(KEY_ESCAPE)
+	var sam := st.structure_at(spot)
+	check(not sam.is_empty() and sam["kind"] == "sam", "a Longbow SAM site is built from the panel")
+	if not sam.is_empty():
+		await click(hex_screen(spot))
+		var reloc := find_button(game.hud._info_box, "Relocate")
+		check(reloc != null and not reloc.disabled, "a SAM site offers Relocate")
+		if reloc != null:
+			await click(center_of(reloc))
+			check(game.mode == game.Mode.RELOCATE and not game._reloc_sites.is_empty(), "Relocate highlights new sites")
+			var dest := Hex.INVALID
+			for h in game._reloc_sites:
+				if on_map(hex_screen(h)):
+					dest = h
+					break
+			await click(hex_screen(dest))
+			await wait(0.6)
+			check(sam["pos"] == dest and sam.get("redeploying", false), "clicking a highlighted site moves the launcher")
+			check(not st.ai.known.has(sam["id"]), "the enemy has lost track of it")
+	# A situation lands on the desk: it opens as a card and a click decides it.
+	st.story._start_situation(st, "inspection")
+	game._directive_deferred = false
+	game.hud.refresh()
+	await click(center_of(game.hud._end_btn))
+	await wait(0.4)
+	check(modal_is("DirectivePanel"), "the end-turn button opens the pending situation")
+	var esc0: int = st.story.pressure
+	if modal_is("DirectivePanel"):
+		await click(center_of(find_enabled_button(game._modal, "Choose")))
+		await wait(0.3)
+	check(st.story.pending == "" and st.story.choices.has("inspection"), "choosing an option resolves the situation")
+	check(st.story.pressure != esc0 or st.energy >= 0, "the choice applied its consequences")
 
 
 func _pause_flow() -> void:

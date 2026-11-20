@@ -4,14 +4,14 @@ extends RefCounted
 
 const TECH_PRIORITY := [
 	"guided_missiles", "logistics", "rapid_flak", "improved_radar", "hardened_shelters", "phased_array",
-	"proximity_fuzes", "jet_interceptors", "naval_aa", "cruise_missiles", "coastwatchers", "satellite_uplink",
-	"directed_energy", "precision_strikes", "deception",
+	"electronic_warfare", "proximity_fuzes", "hit_to_kill", "jet_interceptors", "naval_aa", "cruise_missiles",
+	"uncrewed_systems", "coastwatchers", "satellite_uplink", "directed_energy", "precision_strikes", "deception",
 ]
 
 const HUNTER_PRIORITY := [
 	"guided_missiles", "logistics", "cruise_missiles", "improved_radar", "jet_interceptors", "precision_strikes",
-	"rapid_flak", "hardened_shelters", "phased_array", "satellite_uplink", "proximity_fuzes", "naval_aa",
-	"coastwatchers", "directed_energy", "deception",
+	"rapid_flak", "hardened_shelters", "phased_array", "naval_aa", "uncrewed_systems", "hit_to_kill",
+	"satellite_uplink", "proximity_fuzes", "electronic_warfare", "coastwatchers", "directed_energy", "deception",
 ]
 
 var rng := RandomNumberGenerator.new()
@@ -33,8 +33,11 @@ func play_turn(st: GameState) -> void:
 	_research(st)
 	if skill >= 1.0:
 		_repairs(st)
+		_procure(st)
 		_strikes(st)
 		_units(st)
+		_boats(st)
+		_relocate(st)
 		_produce(st)
 	if skill >= 1.0 or st.turn % 2 == 0:
 		_build(st)
@@ -59,17 +62,40 @@ func _repairs(st: GameState) -> void:
 			st.repair(s["id"])
 
 
+## Landing groups first: they take a city if they arrive. Then carriers.
+func _pick_naval(st: GameState, targets: Array) -> int:
+	for t in targets:
+		if st.landings.has(t):
+			return t
+	return targets[0]
+
+
 func _strikes(st: GameState) -> void:
 	for s in st.structures.values():
 		if s["kind"] != "airbase" and s["kind"] != "missile":
 			continue
 		var targets := st.strike_targets(s["id"])
-		if not targets.is_empty() and st.strike_check(s["id"], targets[0]) == "" and st.supplies > (40 if strategy == "hunter" else 60):
-			st.strike(s["id"], targets[0])
+		if targets.is_empty():
+			continue
+		var t := _pick_naval(st, targets)
+		var reserve := 0 if st.landings.has(t) else (40 if strategy == "hunter" else 60)
+		if st.strike_check(s["id"], t) == "" and st.supplies > reserve:
+			st.strike(s["id"], t)
+	if st.recon_used_turn == st.turn:
+		return
+	# Landing groups out of sight: find them.
+	for lg in st.landings.values():
+		if st.naval_visible(lg):
+			continue
+		var g: Vector2i = lg["seen_pos"] if lg["seen_pos"] != Hex.INVALID else lg["site"]
+		if st.recon_check(g) == "":
+			st.recon_flight(g)
+			_strikes_only(st)
+			return
 	var recon_now := st.turn > 8 and st.turn % 4 == 0 and st.supplies > 80
 	if strategy == "hunter":
 		recon_now = st.supplies > 30
-	if st.recon_used_turn != st.turn and recon_now and not st.carriers.is_empty():
+	if recon_now and not st.carriers.is_empty():
 		var c: Dictionary = st.carriers.values()[st.turn % st.carriers.size()]
 		var guess: Vector2i = c["seen_pos"] if c["seen_pos"] != Hex.INVALID else Hex.offset_to_axial(st.width - 3 - (st.turn % 3), 3 + (st.turn * 5) % (st.height - 6))
 		if st.recon_check(guess) == "":
@@ -82,8 +108,83 @@ func _strikes_only(st: GameState) -> void:
 		if s["kind"] != "airbase" and s["kind"] != "missile":
 			continue
 		var targets := st.strike_targets(s["id"])
-		if not targets.is_empty() and st.strike_check(s["id"], targets[0]) == "":
-			st.strike(s["id"], targets[0])
+		if not targets.is_empty():
+			var t := _pick_naval(st, targets)
+			if st.strike_check(s["id"], t) == "":
+				st.strike(s["id"], t)
+
+
+## Keep the interceptor stockpile from running dry once the Longbows are doing the work.
+func _procure(st: GameState) -> void:
+	if _count(st, "sam") == 0:
+		return
+	var low := 10 + 4 * st.escalation()
+	if st.interceptors < low and st.procure_check() == "" and st.supplies > 50:
+		st.procure()
+
+
+## Drone boats sail at the nearest landing group (or carrier) and attack when adjacent.
+func _boats(st: GameState) -> void:
+	for u in st.units.values():
+		if u["kind"] != "droneboat" or not st.units.has(u["id"]):
+			continue
+		var targets := st.boat_targets(u)
+		if not targets.is_empty():
+			st.boat_attack(u["id"], _pick_naval(st, targets))
+			continue
+		if u["moved"]:
+			continue
+		var goal := Hex.INVALID
+		var gd := 999
+		for t in st.naval_targets():
+			if not st.naval_visible(t):
+				continue
+			var d := Hex.distance(t["pos"], u["pos"]) - (4 if st.landings.has(t["id"]) else 0)
+			if d < gd:
+				gd = d
+				goal = t["pos"]
+		if goal == Hex.INVALID:
+			continue
+		var best := Hex.INVALID
+		var bd := Hex.distance(u["pos"], goal)
+		for h in st.unit_reachable(u):
+			var d2 := Hex.distance(h, goal)
+			if d2 < bd:
+				bd = d2
+				best = h
+		if best != Hex.INVALID:
+			st.move_unit(u["id"], best)
+			var t2 := st.boat_targets(st.units[u["id"]])
+			if not t2.is_empty():
+				st.boat_attack(u["id"], _pick_naval(st, t2))
+
+
+## Shoot and scoot: a launcher the enemy has spotted moves on a quiet turn (no raid due) so
+## the enemy planners lose it without the launcher missing a raid.
+func _relocate(st: GameState) -> void:
+	if st.escalation() < 2 or st.countdown() <= 0 or not st.enemies.is_empty():
+		return
+	for s in st.structures.values():
+		if not Defs.MOBILE.has(s["kind"]) or not st.ai.known.has(s["id"]):
+			continue
+		if st.relocate_check(s["id"]) != "" or st.supplies < 60:
+			continue
+		var sites := st.relocate_sites(s["id"])
+		if sites.is_empty():
+			continue
+		var best: Vector2i = sites[0]
+		var bsc := -INF
+		for h in sites:
+			var sc := rng.randf() * 0.5
+			if st.terrain(h) == "forest":
+				sc += 1.0
+			for o in st.structures.values():
+				if o["kind"] == "capital" or o["kind"] == "city":
+					sc += 2.0 / (1 + Hex.distance(o["pos"], h))
+			if sc > bsc:
+				bsc = sc
+				best = h
+		st.relocate(s["id"], best)
 
 
 func _units(st: GameState) -> void:
@@ -147,17 +248,28 @@ func _choose_kind(st: GameState) -> String:
 		return "missile"
 	if st.has_tech("hardened_shelters") and _count(st, "bunker") < 2:
 		return "bunker"
+	if st.has_tech("electronic_warfare") and _count(st, "ewar") < 1 and st.escalation() >= 1:
+		return "ewar"
 	if st.has_tech("guided_missiles") and sams * 2 < flak:
 		return "sam"
 	return "flak"
 
 
 func _build(st: GameState) -> void:
+	for kind in Defs.REBUILD:
+		if not st.structure_of_kind(kind).is_empty():
+			continue
+		for h in st.ruins:
+			if st.ruins[h] == kind and st.rebuild_check(h) == "" and st.supplies >= int(Defs.REBUILD[kind]) + 20:
+				st.rebuild(h)
+				break
 	var guard := 0
+	# Keep a strike reserve while landing groups are at sea.
+	var reserve := 10 if st.landings.is_empty() else 70
 	while guard < 8:
 		guard += 1
 		var kind := _choose_kind(st)
-		if st.supplies < st.build_cost(kind) + 10:
+		if st.supplies < st.build_cost(kind) + reserve:
 			return
 		var spot := _best_spot(st, kind)
 		if spot == Hex.INVALID:
@@ -180,6 +292,8 @@ func _best_spot(st: GameState, kind: String) -> Vector2i:
 				sc += 6.0 / (1 + d)
 			elif s["kind"] == "city":
 				sc += 3.0 / (1 + d)
+			elif weapon and (s["kind"] == "power" or s["kind"] == "cable"):
+				sc += 2.5 / (1 + d)
 			elif weapon and Defs.STRUCTURES[s["kind"]].has("weapon") and d <= 1:
 				sc -= 1.0
 		if weapon and st.terrain(h) == "hills":
@@ -198,8 +312,11 @@ func _produce(st: GameState) -> void:
 	for s in st.structures.values():
 		if s["kind"] == "airbase" and st.produce_check(s["id"], "interceptor") == "" and st.supplies > 50:
 			st.produce(s["id"], "interceptor")
-		elif s["kind"] == "harbor" and st.produce_check(s["id"], "frigate") == "" and st.supplies > 120:
-			st.produce(s["id"], "frigate")
+		elif s["kind"] == "harbor":
+			if not st.landings.is_empty() and st.produce_check(s["id"], "droneboat") == "" and st.supplies > 40:
+				st.produce(s["id"], "droneboat")
+			elif st.produce_check(s["id"], "frigate") == "" and st.supplies > 120:
+				st.produce(s["id"], "frigate")
 
 
 func _decide(st: GameState) -> void:
