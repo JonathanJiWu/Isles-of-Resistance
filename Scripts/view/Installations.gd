@@ -59,7 +59,7 @@ static func _rng(seed_value: int) -> RandomNumberGenerator:
 
 ## Organic ground footprint (gravel, concrete, earth) so sites sit in the landscape instead of
 ## on a token. Deterministic per radius so static redraws match.
-static func pad(ci: CanvasItem, r: float, col: Color, edge: Color, offset: Vector2 = Vector2.ZERO) -> void:
+static func pad(ci, r: float, col: Color, edge: Color, offset: Vector2 = Vector2.ZERO) -> void:
 	var outer := PackedVector2Array()
 	var inner := PackedVector2Array()
 	for k in 18:
@@ -74,7 +74,7 @@ static func pad(ci: CanvasItem, r: float, col: Color, edge: Color, offset: Vecto
 
 
 ## Perimeter lights: the ownership cue for military sites (teal) and infrastructure (amber).
-static func perimeter(ci: CanvasItem, r: float, col: Color, n: int = 14) -> void:
+static func perimeter(ci, r: float, col: Color, n: int = 14) -> void:
 	for k in n:
 		var a := TAU * (k + 0.5) / n
 		var p := Vector2(cos(a), sin(a) * 0.86) * r
@@ -88,7 +88,7 @@ static func _footprint(c: Vector2, w: float, d: float, rot: float) -> PackedVect
 	return PackedVector2Array([c - ax - ay, c + ax - ay, c + ax + ay, c - ax + ay])
 
 
-static func shadow_poly(ci: CanvasItem, pts: PackedVector2Array, h: float, alpha: float = 0.32) -> void:
+static func shadow_poly(ci, pts: PackedVector2Array, h: float, alpha: float = 0.32) -> void:
 	var off := Vector2(2.0 + h * 0.42, 1.0 + h * 0.2)
 	var all := PackedVector2Array()
 	for p in pts:
@@ -104,7 +104,7 @@ static func shadow_poly(ci: CanvasItem, pts: PackedVector2Array, h: float, alpha
 
 ## A box standing on the ground: footprint w x d centred on c, rotated by rot, height h.
 ## Returns the visible wall quads (ground a, ground b, top b, top a) for window placement.
-static func box(ci: CanvasItem, c: Vector2, w: float, d: float, h: float, rot: float, top: Color, wall: Color,
+static func box(ci, c: Vector2, w: float, d: float, h: float, rot: float, top: Color, wall: Color,
 		shadow: bool = true) -> Array:
 	var g := _footprint(c, w, d, rot)
 	if shadow:
@@ -131,7 +131,7 @@ static func box(ci: CanvasItem, c: Vector2, w: float, d: float, h: float, rot: f
 
 
 ## Lit windows on the visible walls of a box.
-static func windows(ci: CanvasItem, walls: Array, rows: int, cols: int, col: Color, seed_value: int, lit: float = 0.7) -> void:
+static func windows(ci, walls: Array, rows: int, cols: int, col: Color, seed_value: int, lit: float = 0.7) -> void:
 	var r := _rng(seed_value)
 	for wq in walls:
 		var a: Vector2 = wq[0]
@@ -153,7 +153,7 @@ static func windows(ci: CanvasItem, walls: Array, rows: int, cols: int, col: Col
 
 
 ## Vertical cylinder (tank, silo, chimney) of radius r and height h standing on c.
-static func cylinder(ci: CanvasItem, c: Vector2, r: float, h: float, side: Color, top: Color, shadow: bool = true) -> void:
+static func cylinder(ci, c: Vector2, r: float, h: float, side: Color, top: Color, shadow: bool = true) -> void:
 	if shadow:
 		var sh := PackedVector2Array()
 		for k in 16:
@@ -180,14 +180,14 @@ static func cylinder(ci: CanvasItem, c: Vector2, r: float, h: float, side: Color
 	ci.draw_arc(c + Vector2(0, -h), r, PI * 0.9, PI * 1.6, 8, Color(1, 1, 1, 0.25), 1.0, true)
 
 
-static func sphere(ci: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+static func sphere(ci, c: Vector2, r: float, col: Color) -> void:
 	ci.draw_circle(c + Vector2(r * 0.45, r * 0.3), r, Color(0, 0, 0, 0.25))
 	ci.draw_circle(c, r, col)
 	ci.draw_circle(c + Vector2(r * 0.25, r * 0.25), r * 0.75, Color(0, 0, 0, 0.12))
 	ci.draw_circle(c - Vector2(r * 0.35, r * 0.35), r * 0.3, Color(1, 1, 1, 0.35))
 
 
-static func lattice(ci: CanvasItem, base: Vector2, h: float, wb: float, wt: float, col: Color, width: float = 1.1) -> void:
+static func lattice(ci, base: Vector2, h: float, wb: float, wt: float, col: Color, width: float = 1.1) -> void:
 	var bl := base + Vector2(-wb, 0)
 	var br := base + Vector2(wb, 0)
 	var tl := base + Vector2(-wt, -h)
@@ -208,7 +208,7 @@ static func lattice(ci: CanvasItem, base: Vector2, h: float, wb: float, wt: floa
 		prev_r = r
 
 
-static func glow(ci: CanvasItem, p: Vector2, col: Color, r: float = 1.4, strength: float = 1.0) -> void:
+static func glow(ci, p: Vector2, col: Color, r: float = 1.4, strength: float = 1.0) -> void:
 	ci.draw_circle(p, r * 3.2, Color(col, 0.1 * strength))
 	ci.draw_circle(p, r * 1.8, Color(col, 0.22 * strength))
 	ci.draw_circle(p, r, Color(col.lightened(0.3), minf(1.0, strength)))
@@ -219,13 +219,13 @@ static func blink(t: float, period: float, duty: float = 0.5, phase: float = 0.0
 
 
 ## A small truck: cab + bed, oriented along rot.
-static func truck(ci: CanvasItem, c: Vector2, rot: float, length: float, col: Color) -> void:
+static func truck(ci, c: Vector2, rot: float, length: float, col: Color) -> void:
 	var ax := Vector2.RIGHT.rotated(rot)
 	box(ci, c - ax * (length * 0.12), length * 0.76, 5.0, 2.6, rot, col.lightened(0.08), col.darkened(0.25))
 	box(ci, c + ax * (length * 0.4), length * 0.22, 4.6, 3.6, rot, col.lightened(0.15), col.darkened(0.2), false)
 
 
-static func camo_net(ci: CanvasItem, c: Vector2, r: float, seed_value: int) -> void:
+static func camo_net(ci, c: Vector2, r: float, seed_value: int) -> void:
 	var rr := _rng(seed_value)
 	var pts := PackedVector2Array()
 	for k in 9:
@@ -237,8 +237,8 @@ static func camo_net(ci: CanvasItem, c: Vector2, r: float, seed_value: int) -> v
 		ci.draw_circle(p, rr.randf_range(1.0, 2.2), Color(0.28, 0.32, 0.2, 0.8))
 
 
-static func tiny_text(ci: CanvasItem, p: Vector2, text: String, size: int, col: Color) -> void:
-	var font: Font = UITheme.font_bold
+static func tiny_text(ci, p: Vector2, text: String, size: int, col: Color) -> void:
+	var font: Font = UITheme.font_bold if UITheme.font_bold != null else ThemeDB.fallback_font
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 	ci.draw_string(font, p - Vector2(w * 0.5, 0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 
@@ -247,7 +247,7 @@ static func tiny_text(ci: CanvasItem, p: Vector2, text: String, size: int, col: 
 # Entry points
 # --------------------------------------------------------------------------------------------
 
-static func draw_base(ci: CanvasItem, info: Dictionary) -> void:
+static func draw_base(ci, info: Dictionary) -> void:
 	var kind: String = info.get("kind", "")
 	if info.get("foundry", false):
 		_foundry(ci, info)
@@ -274,7 +274,7 @@ static func draw_base(ci: CanvasItem, info: Dictionary) -> void:
 		_damage_marks(ci, stage, int(info.get("seed", 0)), kind)
 
 
-static func draw_live(ci: CanvasItem, info: Dictionary, t: float) -> void:
+static func draw_live(ci, info: Dictionary, t: float) -> void:
 	var kind: String = info.get("kind", "")
 	var seed_value: int = info.get("seed", 0)
 	var ph := float(seed_value % 97) * 0.13
@@ -309,7 +309,7 @@ static func needs_live(_kind: String) -> bool:
 # Damage, smoke, fire, ruins
 # --------------------------------------------------------------------------------------------
 
-static func _damage_marks(ci: CanvasItem, stage: int, seed_value: int, kind: String) -> void:
+static func _damage_marks(ci, stage: int, seed_value: int, kind: String) -> void:
 	var r := _rng(seed_value * 13 + 7)
 	for k in 2 + stage * 2:
 		var p := Vector2(r.randf_range(-16, 16), r.randf_range(-10, 12))
@@ -331,7 +331,7 @@ static func _damage_marks(ci: CanvasItem, stage: int, seed_value: int, kind: Str
 
 
 ## Rising smoke column (deterministic, animated with t). Fire adds flickering flames at the base.
-static func smoke(ci: CanvasItem, base: Vector2, t: float, ph: float, size: float = 1.0, fire: bool = false) -> void:
+static func smoke(ci, base: Vector2, t: float, ph: float, size: float = 1.0, fire: bool = false) -> void:
 	if fire:
 		for k in 3:
 			var fx := base + Vector2(-5 + k * 5, 2)
@@ -349,7 +349,7 @@ static func smoke(ci: CanvasItem, base: Vector2, t: float, ph: float, size: floa
 
 
 ## A destroyed installation's remains (drawn once into the terrain layer).
-static func ruin(ci: CanvasItem, kind: String, c: Vector2, seed_value: int) -> void:
+static func ruin(ci, kind: String, c: Vector2, seed_value: int) -> void:
 	var r := _rng(seed_value)
 	var scorch := PackedVector2Array()
 	for j in 12:
@@ -389,7 +389,7 @@ static func ruin(ci: CanvasItem, kind: String, c: Vector2, seed_value: int) -> v
 const _FLAK_PITS := [Vector2(-9, -3), Vector2(9, 6)]
 
 
-static func _flak(ci: CanvasItem, info: Dictionary) -> void:
+static func _flak(ci, info: Dictionary) -> void:
 	pad(ci, 24.0, GRAVEL, GRAVEL_EDGE)
 	perimeter(ci, 24.0 + 2.5, Defs.PLAYER_COLOR)
 	for p in _FLAK_PITS:
@@ -410,7 +410,7 @@ static func _flak(ci: CanvasItem, info: Dictionary) -> void:
 		ci.draw_rect(Rect2(mid + Vector2(-1.6, -3.2), Vector2(3.2, 3.2)), Color(0.05, 0.06, 0.07))
 
 
-static func _gun_barrels(ci: CanvasItem, p: Vector2, aim: float, col: Color) -> void:
+static func _gun_barrels(ci, p: Vector2, aim: float, col: Color) -> void:
 	var dir := Vector2(cos(aim), sin(aim) * 0.55) * 8.0 + Vector2(0, -7.5)
 	var side := Vector2(cos(aim + PI * 0.5), sin(aim + PI * 0.5) * 0.55) * 1.4
 	var base := p + Vector2(0, -2.6)
@@ -420,7 +420,7 @@ static func _gun_barrels(ci: CanvasItem, p: Vector2, aim: float, col: Color) -> 
 	ci.draw_circle(base, 2.3, col.lightened(0.1))
 
 
-static func _flak_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _flak_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var facing: int = info.get("facing", 0)
 	var base_aim := dir_vec(facing if facing >= 0 else 0).angle()
 	for i in _FLAK_PITS.size():
@@ -432,7 +432,7 @@ static func _flak_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) ->
 		glow(ci, Vector2(13, -19.5), RED_LIGHT, 0.9, 0.8)
 
 
-static func _radar(ci: CanvasItem, info: Dictionary) -> void:
+static func _radar(ci, info: Dictionary) -> void:
 	pad(ci, 24.0, GRAVEL, GRAVEL_EDGE)
 	perimeter(ci, 24.0 + 2.5, Defs.PLAYER_COLOR)
 	var fence := Hex.corners(Vector2.ZERO, 25.5)
@@ -451,7 +451,7 @@ static func _radar(ci: CanvasItem, info: Dictionary) -> void:
 	box(ci, Vector2(-6, -24), 6.0, 4.0, 2.0, 0.0, STEEL_DARK, STEEL_DARK.darkened(0.3), false)
 
 
-static func _radar_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _radar_live(ci, t: float, ph: float) -> void:
 	var top := Vector2(-6, -27)
 	var th := t * 1.6 + ph
 	var cw := cos(th)
@@ -479,7 +479,7 @@ static func _sam_layout(info: Dictionary) -> Dictionary:
 
 
 ## Launcher vehicle: truck with a canister pack raised toward `aim` (the threat or the sea).
-static func _launcher(ci: CanvasItem, p: Vector2, aim: float, col: Color, tubes: int, raised: float) -> void:
+static func _launcher(ci, p: Vector2, aim: float, col: Color, tubes: int, raised: float) -> void:
 	var fwd := Vector2(cos(aim), sin(aim))
 	truck(ci, p - fwd * 1.5, aim, 12.0, col)
 	var dir := Vector2(cos(aim), sin(aim) * 0.6)
@@ -498,7 +498,7 @@ static func _launcher(ci: CanvasItem, p: Vector2, aim: float, col: Color, tubes:
 		ci.draw_circle(tip + side * o + Vector2(0, 1.1), 0.95, Color(0.95, 0.55, 0.2))
 
 
-static func _sam(ci: CanvasItem, info: Dictionary) -> void:
+static func _sam(ci, info: Dictionary) -> void:
 	pad(ci, 25.0, GRAVEL, GRAVEL_EDGE)
 	perimeter(ci, 25.0 + 2.5, Defs.PLAYER_COLOR)
 	var L := _sam_layout(info)
@@ -523,7 +523,7 @@ static func _sam(ci: CanvasItem, info: Dictionary) -> void:
 	ci.draw_line(L["van"] + Vector2(2, -4.5), L["van"] + Vector2(2, -13), STEEL_DARK, 0.9)
 
 
-static func _sam_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _sam_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var L := _sam_layout(info)
 	var i := 0
 	for p in L["launchers"]:
@@ -536,7 +536,7 @@ static func _sam_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> 
 		glow(ci, L["van"] + Vector2(2, -13.5), RED_LIGHT, 0.8)
 
 
-static func _laser(ci: CanvasItem, info: Dictionary) -> void:
+static func _laser(ci, info: Dictionary) -> void:
 	pad(ci, 23.0, CONCRETE_DARK, GRAVEL_EDGE)
 	perimeter(ci, 23.0 + 2.5, Defs.PLAYER_COLOR)
 	for k in 8:
@@ -563,7 +563,7 @@ static func _laser(ci: CanvasItem, info: Dictionary) -> void:
 	ci.draw_arc(Vector2(1, -2), 6.5, PI * 1.1, PI * 1.5, 6, Color(1, 1, 1, 0.3), 1.0, true)
 
 
-static func _laser_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _laser_live(ci, t: float, ph: float) -> void:
 	var aim := -0.9 + sin(t * 0.3 + ph) * 0.35
 	var base := Vector2(1, -6)
 	var tip := base + Vector2(cos(aim), sin(aim)) * 9.0
@@ -581,7 +581,7 @@ static func _laser_live(ci: CanvasItem, t: float, ph: float) -> void:
 # Airfields, ports, coastal sites
 # --------------------------------------------------------------------------------------------
 
-static func _airbase(ci: CanvasItem, info: Dictionary) -> void:
+static func _airbase(ci, info: Dictionary) -> void:
 	pad(ci, 26.0, GRASS.darkened(0.15), Color(0.3, 0.38, 0.26, 0.5))
 	var rot: float = info.get("axis", 0.52)
 	var ax := Vector2.RIGHT.rotated(rot)
@@ -629,7 +629,7 @@ static func _airbase(ci: CanvasItem, info: Dictionary) -> void:
 			ci.draw_arc(p, 3.4, 0, TAU, 10, Color(0.45, 0.4, 0.33, 0.8), 1.0)
 
 
-static func _airbase_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _airbase_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var rot: float = info.get("axis", 0.52)
 	var ax := Vector2.RIGHT.rotated(rot)
 	var nv := ax.orthogonal()
@@ -663,7 +663,7 @@ static func _harbor_basis(info: Dictionary) -> Array:
 	return [u, u.orthogonal()]
 
 
-static func _harbor(ci: CanvasItem, info: Dictionary) -> void:
+static func _harbor(ci, info: Dictionary) -> void:
 	var b := _harbor_basis(info)
 	var u: Vector2 = b[0]
 	var v: Vector2 = b[1]
@@ -712,7 +712,7 @@ static func _harbor(ci: CanvasItem, info: Dictionary) -> void:
 	ci.draw_line(cb - u * 8.0 + Vector2(0, -15), cb + u * 18.0 + Vector2(0, -15), Color(0.9, 0.65, 0.25), 1.8, true)
 
 
-static func _harbor_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _harbor_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var b := _harbor_basis(info)
 	var u: Vector2 = b[0]
 	var v: Vector2 = b[1]
@@ -728,7 +728,7 @@ static func _harbor_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) 
 		glow(ci, cb + u * 18.0 + Vector2(0, -15.5), RED_LIGHT, 0.8)
 
 
-static func _coastal_battery(ci: CanvasItem, info: Dictionary) -> void:
+static func _coastal_battery(ci, info: Dictionary) -> void:
 	pad(ci, 24.0, GRAVEL, GRAVEL_EDGE)
 	perimeter(ci, 24.0 + 2.5, Defs.PLAYER_COLOR)
 	var facing: int = info.get("facing", -1)
@@ -747,7 +747,7 @@ static func _coastal_battery(ci: CanvasItem, info: Dictionary) -> void:
 	ci.draw_line(-u * 11.0 + v * 9.0 + Vector2(0, -3), -u * 11.0 + v * 9.0 + Vector2(0, -20), STEEL_DARK, 1.2)
 
 
-static func _battery_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _battery_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var facing: int = info.get("facing", -1)
 	var u := dir_vec(facing if facing >= 0 else 0)
 	var v := u.orthogonal()
@@ -764,7 +764,7 @@ static func _battery_live(ci: CanvasItem, info: Dictionary, t: float, ph: float)
 # Support sites
 # --------------------------------------------------------------------------------------------
 
-static func _lab(ci: CanvasItem, info: Dictionary) -> void:
+static func _lab(ci, info: Dictionary) -> void:
 	pad(ci, 24.0, Color(0.16, 0.2, 0.17), Color(0.3, 0.36, 0.3, 0.5))
 	var lot := _footprint(Vector2(-2, 15), 22.0, 6.0, 0.0)
 	ci.draw_colored_polygon(lot, ASPHALT)
@@ -790,7 +790,7 @@ static func _lab(ci: CanvasItem, info: Dictionary) -> void:
 	ci.draw_line(Vector2(14, -8), Vector2(14, -16), STEEL, 1.0)
 
 
-static func _lab_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _lab_live(ci, t: float, ph: float) -> void:
 	var dish_c := Vector2(-12, -13.5)
 	var a := -0.6 + sin(t * 0.25 + ph) * 0.3
 	var pts := PackedVector2Array()
@@ -803,7 +803,7 @@ static func _lab_live(ci: CanvasItem, t: float, ph: float) -> void:
 		glow(ci, Vector2(14, -16.5), RED_LIGHT, 0.8)
 
 
-static func _bunker(ci: CanvasItem, info: Dictionary) -> void:
+static func _bunker(ci, info: Dictionary) -> void:
 	var mound := PackedVector2Array()
 	for k in 24:
 		var a := TAU * k / 24.0
@@ -836,7 +836,7 @@ static func _bunker(ci: CanvasItem, info: Dictionary) -> void:
 		ci.draw_line(Vector2(-21, -6), Vector2(-21, -6) + Vector2(cos(a), sin(a)) * 3.0, STEEL, 1.6)
 
 
-static func _bunker_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _bunker_live(ci, t: float, ph: float) -> void:
 	for k in 3:
 		var x := -12.0 + k * 12.0
 		var p := Vector2(x, 9.0 - absf(x) * 0.12) + Vector2(0, -7.5)
@@ -844,7 +844,7 @@ static func _bunker_live(ci: CanvasItem, t: float, ph: float) -> void:
 	tiny_text(ci, Vector2(0, 19.5), "SHELTER", 6, Color(0.45, 1.0, 0.6, 0.85))
 
 
-static func _decoy(ci: CanvasItem, info: Dictionary) -> void:
+static func _decoy(ci, info: Dictionary) -> void:
 	pad(ci, 24.0, Color(0.24, 0.24, 0.22), Color(0.45, 0.42, 0.35, 0.6))
 	var fake_layout := _sam_layout(info)
 	for p in fake_layout["launchers"]:
@@ -861,7 +861,7 @@ static func _decoy(ci: CanvasItem, info: Dictionary) -> void:
 	box(ci, Vector2(14, 12), 5.0, 4.0, 3.0, 0.0, Color(0.5, 0.5, 0.48), Color(0.35, 0.35, 0.33))
 
 
-static func _decoy_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _decoy_live(ci, t: float, ph: float) -> void:
 	var breathe := 1.0 + 0.04 * sin(t * 1.7 + ph)
 	var L := _sam_layout({"facing": 0})
 	for p in L["launchers"]:
@@ -886,7 +886,7 @@ static func _decoy_live(ci: CanvasItem, t: float, ph: float) -> void:
 # Strategic infrastructure (placed by the map generator)
 # --------------------------------------------------------------------------------------------
 
-static func _power(ci: CanvasItem, info: Dictionary) -> void:
+static func _power(ci, info: Dictionary) -> void:
 	var facing: int = info.get("facing", -1)
 	var u := dir_vec(facing if facing >= 0 else 0)
 	var v := u.orthogonal()
@@ -913,7 +913,7 @@ static func _power(ci: CanvasItem, info: Dictionary) -> void:
 	windows(ci, hall, 2, 6, WINDOW, 31, 0.5)
 
 
-static func _power_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _power_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var facing: int = info.get("facing", -1)
 	var u := dir_vec(facing if facing >= 0 else 0)
 	var v := u.orthogonal()
@@ -933,7 +933,7 @@ static func _power_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -
 				ci.draw_circle(p, 1.8 + f * 5.0, Color(0.75, 0.78, 0.82, (1.0 - f) * 0.3))
 
 
-static func _cable(ci: CanvasItem, info: Dictionary) -> void:
+static func _cable(ci, info: Dictionary) -> void:
 	var facing: int = info.get("facing", -1)
 	var u := dir_vec(facing if facing >= 0 else 0)
 	var v := u.orthogonal()
@@ -964,7 +964,7 @@ static func _cable(ci: CanvasItem, info: Dictionary) -> void:
 		ci.draw_circle(dp, 1.2, STEEL_DARK)
 
 
-static func _cable_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _cable_live(ci, t: float, ph: float) -> void:
 	if blink(t, 1.3, 0.15, ph):
 		glow(ci, Vector2(0, -24), RED_LIGHT, 0.8)
 
@@ -973,7 +973,7 @@ static func _cable_live(ci: CanvasItem, t: float, ph: float) -> void:
 # Capital, cities, the Foundry
 # --------------------------------------------------------------------------------------------
 
-static func _street_pad(ci: CanvasItem, r: float, seed_value: int) -> void:
+static func _street_pad(ci, r: float, seed_value: int) -> void:
 	pad(ci, r, Color(0.2, 0.21, 0.25), Color(0.36, 0.38, 0.42, 0.6))
 	var rr := _rng(seed_value)
 	for k in 3:
@@ -986,14 +986,14 @@ static func _street_pad(ci: CanvasItem, r: float, seed_value: int) -> void:
 		ci.draw_line(Vector2(x, -r * 0.75), Vector2(x, r * 0.75), Color(0.3, 0.31, 0.35), 3.0)
 
 
-static func _tower_block(ci: CanvasItem, c: Vector2, w: float, d: float, h: float, seed_value: int, tint: Color) -> void:
+static func _tower_block(ci, c: Vector2, w: float, d: float, h: float, seed_value: int, tint: Color) -> void:
 	var t2 := tint.lightened(0.12)
 	var walls := box(ci, c, w, d, h, 0.0, t2.lightened(0.18), t2)
 	var glass := seed_value % 3 == 0
 	windows(ci, walls, maxi(2, int(h / 2.6)), 4, Color(0.6, 0.95, 1.0) if glass else WINDOW, seed_value, 0.68)
 
 
-static func _capital(ci: CanvasItem, info: Dictionary) -> void:
+static func _capital(ci, info: Dictionary) -> void:
 	_street_pad(ci, 29.0, 41)
 	# Skyline behind the government quarter.
 	_tower_block(ci, Vector2(-15, -15), 8.0, 7.0, 22.0, 3, Color(0.36, 0.42, 0.5))
@@ -1038,7 +1038,7 @@ static func _capital(ci: CanvasItem, info: Dictionary) -> void:
 	tiny_text(ci, Vector2(-18, 15.5), "H", 7, Color(0.9, 0.9, 0.85, 0.85))
 
 
-static func _capital_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _capital_live(ci, t: float, ph: float) -> void:
 	if blink(t, 1.2, 0.5, ph):
 		glow(ci, Vector2(-22, -50.5), RED_LIGHT, 1.0)
 	ci.draw_line(Vector2(-26.4, -33), Vector2(-17.6, -33), Color(0.6, 1.0, 1.0, 0.35 + 0.25 * sin(t * 2.0)), 1.6)
@@ -1057,7 +1057,7 @@ static func city_style(name: String, facing: int) -> String:
 	return styles[h % styles.size()]
 
 
-static func _city(ci: CanvasItem, info: Dictionary) -> void:
+static func _city(ci, info: Dictionary) -> void:
 	var seed_value: int = info.get("seed", 0)
 	_street_pad(ci, 27.0, seed_value)
 	var style: String = info.get("style", "towers")
@@ -1096,7 +1096,7 @@ static func _city(ci: CanvasItem, info: Dictionary) -> void:
 			ci.draw_line(Vector2(-26, 15), Vector2(26, 12), Color(0.55, 0.6, 0.64, 0.6), 0.8)
 
 
-static func _shophouse(ci: CanvasItem, p: Vector2, w: float, h: float, seed_value: int) -> void:
+static func _shophouse(ci, p: Vector2, w: float, h: float, seed_value: int) -> void:
 	var walls := box(ci, p, w, 6.0, h, 0.0, TILE_ROOF, Color(0.62, 0.58, 0.5))
 	windows(ci, walls, 1, 2, WINDOW, seed_value, 0.75)
 	var top := p + Vector2(0, -h)
@@ -1104,7 +1104,7 @@ static func _shophouse(ci: CanvasItem, p: Vector2, w: float, h: float, seed_valu
 	ci.draw_line(top + Vector2(-w * 0.4, -2.0), top + Vector2(w * 0.4, -2.0), TILE_ROOF.lightened(0.3), 0.8)
 
 
-static func temple(ci: CanvasItem, p: Vector2) -> void:
+static func temple(ci, p: Vector2) -> void:
 	box(ci, p + Vector2(0, 2), 16.0, 10.0, 2.0, 0.0, STONE, STONE.darkened(0.25))
 	box(ci, p, 12.0, 7.0, 5.0, 0.0, Color(0.55, 0.15, 0.12), Color(0.6, 0.16, 0.13))
 	for tier in 2:
@@ -1116,7 +1116,7 @@ static func temple(ci: CanvasItem, p: Vector2) -> void:
 		ci.draw_line(p + Vector2(-hw + 2.0, y - 3.4), p + Vector2(hw - 2.0, y - 3.4), Color(0.85, 0.7, 0.3), 1.0)
 
 
-static func _city_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) -> void:
+static func _city_live(ci, info: Dictionary, t: float, ph: float) -> void:
 	var style: String = info.get("style", "towers")
 	if style == "towers":
 		if blink(t, 1.7, 0.4, ph):
@@ -1133,7 +1133,7 @@ static func _city_live(ci: CanvasItem, info: Dictionary, t: float, ph: float) ->
 			glow(ci, u * 32.0 + Vector2(0, -13), RED_LIGHT, 0.8)
 
 
-static func _foundry(ci: CanvasItem, info: Dictionary) -> void:
+static func _foundry(ci, info: Dictionary) -> void:
 	_street_pad(ci, 28.0, 99)
 	# Substation and bulk-gas yard.
 	for gx in 3:
@@ -1152,7 +1152,7 @@ static func _foundry(ci: CanvasItem, info: Dictionary) -> void:
 	cylinder(ci, Vector2(-20, -4), 5.0, 6.0, CONCRETE.lightened(0.1), Color(0.3, 0.33, 0.36))
 
 
-static func _foundry_live(ci: CanvasItem, t: float, ph: float) -> void:
+static func _foundry_live(ci, t: float, ph: float) -> void:
 	for k in 4:
 		var f := fmod(t * 0.2 + k / 4.0, 1.0)
 		var p := Vector2(-20, -10) + Vector2(f * 10.0 + sin(f * 6.0) * 1.5, -f * 18.0)

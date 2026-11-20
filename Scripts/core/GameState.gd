@@ -1063,6 +1063,10 @@ func recon_flight(h: Vector2i) -> Array:
 		log_msg("Recon flight has located %s! Strike while it is exposed." % ("an enemy carrier" if spotted == 1 else "%d enemy carriers" % spotted), "intel")
 	else:
 		log_msg("Recon flight complete. Area revealed until your next turn.")
+	# Fresh eyes sharpen the raid forecast.
+	if not forecast.is_empty() and intel_confidence() > int(forecast.get("confidence", 0)):
+		_update_forecast()
+		log_msg("Recon has sharpened the raid forecast (%s confidence)." % confidence_label(intel_confidence()).to_lower(), "intel")
 	_sink = null
 	return events
 

@@ -50,6 +50,7 @@ func setup(s: Dictionary) -> void:
 		_base = DrawLayer.new()
 		_base.show_behind_parent = true
 		_base.draw_fn = _draw_base
+		_base.batched = true
 		_base.scale = Vector2(ART_SCALE, ART_SCALE)
 		add_child(_base)
 	_stage = _stage_for(hp, max_hp)
@@ -97,7 +98,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-func _draw_base(l: DrawLayer) -> void:
+func _draw_base(l) -> void:
 	if kind == "capital" or kind == "city":
 		var warm := Color(1.0, 0.45, 0.75) if foundry else Color(1.0, 0.6, 0.3)
 		for r in [48.0, 36.0, 25.0]:

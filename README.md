@@ -80,6 +80,7 @@ The setting draws on contemporary themes (contested sovereignty, maritime chokep
 | | |
 |---|---|
 | ![Title screen](docs/screenshots/menu.png) | ![A directive](docs/screenshots/directive.png) |
+| ![A situation lands on the desk](docs/screenshots/situation.png) | ![Ballistic missiles inbound while a landing group sails](docs/screenshots/assault.png) |
 | ![Intel Archive](docs/screenshots/intel.png) | ![Epilogue](docs/screenshots/epilogue.png) |
 | ![Research tree](docs/screenshots/research.png) | ![Carrier strike](docs/screenshots/strike.png) |
 

@@ -21,6 +21,7 @@ func _init() -> void:
 	test_lore_integrity()
 	test_campaign_story()
 	test_tension_systems()
+	test_canvas_batcher()
 	test_full_campaigns()
 	if OS.get_cmdline_user_args().has("--balance"):
 		balance_report()
@@ -784,6 +785,17 @@ func test_tension_systems() -> void:
 	check(not st.forecast.is_empty() and st.forecast["eta"][0] <= st.forecast["eta"][1], "a forecast gives a window of turns")
 	check(st.forecast["size"][0] <= st.forecast["size"][1] and Defs.SECTORS.has(st.forecast["sector"]), "and a size range and a sector")
 	check(int(st.forecast["confidence"]) == st.intel_confidence(), "the forecast carries the current confidence")
+	# A recon flight that raises confidence re-runs the forecast.
+	var conf_before: int = st.forecast["confidence"]
+	st.supplies = 100
+	var rh := Hex.INVALID
+	for h in Hex.in_range(st.capital()["pos"], 6):
+		if st.recon_check(h) == "":
+			rh = h
+			break
+	if rh != Hex.INVALID and conf_before < 2:
+		st.recon_flight(rh)
+		check(int(st.forecast["confidence"]) == st.intel_confidence() and st.intel_confidence() > conf_before, "recon flights sharpen the forecast")
 	st.confidence_turns = 3
 	st.techs["satellite_uplink"] = true
 	st._update_forecast()
@@ -838,6 +850,44 @@ func test_tension_systems() -> void:
 			back.end_turn()
 		check(var_to_bytes(st.to_dict()) == var_to_bytes(back.to_dict()), "a restored late-war game continues identically")
 	print("    %d checks" % (checks - c0))
+
+
+func test_canvas_batcher() -> void:
+	section("batched static drawing")
+	var b := CanvasBatcher.new()
+	b.draw_colored_polygon(Hex.corners(Vector2.ZERO, 10.0), Color.RED)
+	check(b.vertex_count() == 12, "a hexagon becomes four triangles (%d vertices)" % b.vertex_count())
+	b.draw_line(Vector2.ZERO, Vector2(10, 0), Color.WHITE, 2.0)
+	check(b.vertex_count() == 18, "a thick line is one quad")
+	b.draw_line(Vector2.ZERO, Vector2(10, 0), Color.WHITE, 2.0, true)
+	check(b.vertex_count() == 36, "an antialiased line adds a feather on each side")
+	var before := b.vertex_count()
+	b.draw_circle(Vector2(5, 5), 4.0, Color.BLUE)
+	check(b.vertex_count() > before and (b.vertex_count() - before) % 3 == 0, "circles are triangle fans")
+	before = b.vertex_count()
+	b.draw_colored_polygon(PackedVector2Array([Vector2.ZERO, Vector2(1, 1)]), Color.RED)
+	b.draw_colored_polygon(Hex.corners(Vector2.ZERO, 10.0), Color(1, 1, 1, 0))
+	b.draw_line(Vector2.ONE, Vector2.ONE, Color.WHITE, 3.0)
+	check(b.vertex_count() == before, "degenerate and invisible shapes add nothing")
+	b.draw_set_transform(Vector2(100, 0), 0.0, Vector2(2, 2))
+	b.draw_rect(Rect2(0, 0, 1, 1), Color.GREEN)
+	var mesh := b.build()
+	check(mesh != null and mesh.get_surface_count() == 1, "everything lands in one mesh surface")
+	var verts: PackedVector2Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	check(verts[verts.size() - 1].x >= 100.0 and verts[verts.size() - 2].x <= 102.01, "draw transforms are applied to recorded geometry")
+	check(CanvasBatcher.new().build() == null, "an empty batch builds nothing")
+	# The real static layers must draw only what the batcher supports: record a whole map.
+	var st := GameState.create(4242, "veteran")
+	var mv := MapView.new()
+	mv.setup(st.tiles, st.cells, st.env)
+	mv._c = CanvasBatcher.new()
+	mv._paint()
+	check(mv._c.vertex_count() > 10000, "the terrain records into the batch (%d vertices)" % mv._c.vertex_count())
+	mv.free()
+	var nb := CanvasBatcher.new()
+	for s in st.structures.values():
+		Installations.draw_base(nb, {"kind": s["kind"], "facing": s.get("facing", -1), "axis": s.get("axis", 0), "seed": 7, "foundry": s.get("foundry", false), "stage": 0, "style": ""})
+	check(nb.vertex_count() > 1000, "installation art records into the batch")
 
 
 func test_full_campaigns() -> void:

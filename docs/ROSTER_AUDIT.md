@@ -84,7 +84,7 @@ All values are in `Scripts/core/Defs.gd` unless stated otherwise.
 | Inkwash | Stealth Bomber · hp 36 · speed 4 · damage 36 · cost 8 · from wave 6 | Stealth Fighter · hp 30 · speed 5 · damage 24 · cost 7 · **hunts emitters** · from Blockade, wave 5 |
 | Mantis | Gunship · in carrier waves | Attack Helicopter · **flies only from landing groups** |
 | Ballistic salvo | — | **new** · 2/2/3/3 missiles per raid by difficulty (+1 in the second half of the campaign) · Strikes rung and above |
-| Landing group | — | **new** · 1/1/1/2 groups · hp 100/130/150/140 · 2 hexes a turn · tracked within 7 hexes of any of your sites · Assault rung |
+| Landing group | — | **new** · 1/1/1/2 groups · hp 100/130/150/130 · 2 hexes a turn · tracked within 7 hexes of any of your sites · Assault rung |
 
 **Tessera roster**
 
@@ -109,7 +109,7 @@ All values are in `Scripts/core/Defs.gd` unless stated otherwise.
 | Escalation per wave | — | 4 / 6 / 6 / 6 pressure |
 | Landing groups | — | 1 / 1 / 1 / 2 |
 | Salvo size | — | 2 / 2 / 3 / 3 |
-| Wave budget base / growth | 9 / 5, 16.5 / 9.1, 20 / 11, 21.5 / 11.5 | 9 / 5, 16.5 / 9.1, **19 / 9.6**, **20 / 9.9** (retuned for the new pressures) |
+| Wave budget base / growth | 9 / 5, 16.5 / 9.1, 20 / 11, 21.5 / 11.5 | 9 / 5, 16.5 / 9.1, **19.8 / 10**, **19.5 / 9.4** (retuned for the new pressures) |
 | Commander starting supplies | 95 | 100 |
 
 ## Doctrines
@@ -145,7 +145,18 @@ The sides are deliberately unlike each other.
 
 Bots play 24 seeds per row (`godot --headless -s tests/run_tests.gd -- --balance`). Target: an even difficulty ladder close to the previous release (about 100 / 88 / 62 / 27% for the full bot).
 
-BALANCE_TABLE
+| Difficulty | Full bot: wins | Half-hearted bot: wins | Avg. turns (full bot) | Previous release (full bot) |
+|---|---|---|---|---|
+| Recruit | 100% | 100% | 32.5 | ~100% |
+| Regular | 91% | 50% | 40.5 | ~88% |
+| Veteran | 53% (65% over 48 seeds) | 16% | 36.9 | ~62% |
+| Commander | 22% | 0% | 38.1 | ~27% |
+
+32 seeds per row, November 2026. Results move by about ±10 points between seed sets, so the veteran figure is shown for two runs. To get here, several mechanics were changed or retuned after the first balance runs:
+
+- **Blackouts were a death spiral.** In early runs a destroyed power station meant blackouts for the rest of the war, which was over 60% of turns. Now its loss means three turns of blackouts and a faster drain, it can be rebuilt, the reserve drains every other turn until Assault, and escorted tankers refill it.
+- **Landing groups were invisible until the last moment.** They are now tracked within 7 hexes of any site, spawn about 12 hexes out rather than at the map edge, and turn back if the war steps down from Assault.
+- **Later rungs stacked too much.** Escalation no longer also inflates raid budgets (×1.15 at Assault became ×1.0), because the rung's new weapons are the escalation. Salvo sizes, the veteran and commander wave budgets, and landing-group strength were trimmed.
 
 The bot is a heuristic stand-in. It does not use situations well (it picks options at random) or exploit relocation fully, so a thoughtful player should do better than it on every difficulty.
 

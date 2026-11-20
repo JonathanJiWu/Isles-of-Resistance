@@ -4,6 +4,10 @@ extends Node2D
 
 var draw_fn: Callable
 var animate := false
+## Static content: record into one batched mesh (one draw call). draw_fn then receives a
+## CanvasBatcher, so it may only use the drawing calls CanvasBatcher mirrors.
+var batched := false
+var _mesh: ArrayMesh
 
 
 func _process(_delta: float) -> void:
@@ -12,7 +16,13 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
-	if draw_fn.is_valid():
+	if not draw_fn.is_valid():
+		return
+	if batched:
+		var c := CanvasBatcher.new()
+		draw_fn.call(c)
+		_mesh = c.submit(self)
+	else:
 		draw_fn.call(self)
 
 
