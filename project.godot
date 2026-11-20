@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Isles of Resistance"
 config/description="Turn-based archipelago air-defense strategy against an adaptive invasion."
-config/version="1.0.0"
+config/version="1.1.0"
 run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 boot_splash/bg_color=Color(0.02, 0.05, 0.09, 1)

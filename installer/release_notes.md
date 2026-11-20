@@ -18,11 +18,23 @@
 
 **Requirements:** 64-bit Windows 10 or 11, and a graphics card with OpenGL 3.3 or Direct3D 11. The game falls back to Direct3D 11 automatically when OpenGL isn't available, as on many ARM laptops. About 150 MB of free disk space.
 
+## What's new in 1.1
+
+- **A war that escalates.** The conflict climbs and falls through five rungs: Gray Zone, Quarantine, Blockade, Strikes and Assault. Each rung changes what the enemy sends and what it will hit: decoy swarms and loitering munitions, jammers and cruise missiles, ballistic salvos against known bases, and finally landing groups racing for the beaches. Restraint and diplomacy can bring it back down.
+- **Pressure off the battlefield.** A national interceptor stockpile that every SAM shot draws down. An LNG reserve that drains under blockade, with rolling blackouts. Undersea cables whose loss blinds your intelligence. Raid forecasts that are only as good as your intelligence. Thirteen situations, from a tanker stopped for "inspection" to an enemy pilot pulled from the sea, each with real trade-offs and some with deadlines.
+- **New tools.** Shoot-and-scoot SAM and missile launchers, Cicada EW stations, Swiftlet drone boats, hit-to-kill interceptors, emergency interceptor orders, and rebuilding destroyed infrastructure. The enemy gains early-warning planes, EW jets, missile bombers, stealth fighters and amphibious landing groups.
+- **A living archipelago.** Installations you can read at a glance, roads, villages, lighthouses and wind farms, shipping that thins out as the blockade tightens, seasons and weather that matter, and battle damage that stays.
+- **Field Training.** A one-minute interactive tutorial at the start of your first campaign, replayable any time.
+- **Research-based.** The forces and escalation are modeled on open-source analysis of the Taiwan Strait at the level of roles and capabilities, then fictionalized. See [docs/RESEARCH.md](https://github.com/JonathanJiWu/Isles-of-Resistance/blob/v{VERSION}/docs/RESEARCH.md) and [docs/ROSTER_AUDIT.md](https://github.com/JonathanJiWu/Isles-of-Resistance/blob/v{VERSION}/docs/ROSTER_AUDIT.md).
+- **Faster rendering.** Static map layers now draw in a handful of draw calls instead of thousands.
+
+Saves from 1.0 can't be continued in 1.1, because the campaign state has changed. Your Hall of Fame and settings carry over, and returning players aren't sent through Field Training automatically: it's in the main menu.
+
 ## What's in the game
 
 - **Adaptive enemy.** The invader has its own fog of war, routes around your known defenses, and rebuilds each wave to counter your favorite weapons.
-- **Story you play.** Four acts and eight political directives, each with explicit consequences. You manage Public Resolve, Hesperian Commitment and the Glass Shield over Silica Point. Spend research on cyber ops, follow a live news ticker and intercepted pilot chatter, open the Intel Archive, and reach one of several epilogues.
-- **Strategy.** Generated archipelagos with meaningful terrain, recon flights, a 15-technology research tree, interceptor squadrons, and carrier strikes.
+- **Story you play.** Four acts, eight political directives and thirteen situations, each with explicit consequences. You manage Public Resolve, Hesperian Commitment and the Glass Shield over Silica Point. Spend research on cyber ops, follow a live news ticker and intercepted pilot chatter, open the Intel Archive, and reach one of several epilogues.
+- **Strategy.** Generated archipelagos with meaningful terrain, recon flights, an 18-technology research tree, interceptor squadrons, and carrier strikes.
 - **Polish.** Skippable battle animations, procedural music and sound, four difficulty levels with an even ramp, autosave, and a Hall of Fame.
 
 Full details are in the [README](https://github.com/JonathanJiWu/Isles-of-Resistance#readme). The world bible is in [docs/WORLD.md](https://github.com/JonathanJiWu/Isles-of-Resistance/blob/v{VERSION}/docs/WORLD.md).

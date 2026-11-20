@@ -53,6 +53,14 @@ func apply() -> void:
 	changed.emit()
 
 
+## Someone who already has a campaign save or a Hall of Fame entry (from an earlier version)
+## is not sent through Field Training automatically; it stays available in the main menu.
+func _returning_player() -> bool:
+	if OS.get_cmdline_user_args().has("--sandbox"):
+		return false
+	return FileAccess.file_exists("user://savegame.dat") or FileAccess.file_exists("user://highscores.cfg")
+
+
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("audio", "master", master_volume)
@@ -72,6 +80,7 @@ func save_settings() -> void:
 func load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) != OK:
+		tutorial_done = _returning_player()
 		return
 	master_volume = cfg.get_value("audio", "master", master_volume)
 	music_volume = cfg.get_value("audio", "music", music_volume)
@@ -82,7 +91,8 @@ func load_settings() -> void:
 	show_grid = cfg.get_value("game", "show_grid", show_grid)
 	show_intents = cfg.get_value("game", "show_intents", show_intents)
 	tutorial_hints = cfg.get_value("game", "tutorial_hints", tutorial_hints)
-	tutorial_done = cfg.get_value("game", "tutorial_done", tutorial_done)
+	# A settings file from 1.0 has no tutorial key: that player already knows the game.
+	tutorial_done = cfg.get_value("game", "tutorial_done", true)
 	fullscreen = cfg.get_value("display", "fullscreen", fullscreen)
 
 

@@ -1,7 +1,7 @@
 ; Isles of Resistance: Windows installer (NSIS 3)
 ;
 ; Built by installer/build_windows.sh. To build by hand:
-;   makensis -DARCH=x64|arm64 -DVERSION=1.0.0 -DSRCDIR=/abs/build/windows-x64 \
+;   makensis -DARCH=x64|arm64 -DVERSION=1.1.0 -DSRCDIR=/abs/build/windows-x64 \
 ;            -DOUTFILE=/abs/dist/IslesOfResistance-Setup-x64.exe IslesOfResistance.nsi
 ;
 ; SRCDIR must contain IslesOfResistance.exe, IslesOfResistance.pck,

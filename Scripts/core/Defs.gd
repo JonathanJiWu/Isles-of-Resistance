@@ -2,7 +2,7 @@ class_name Defs
 extends RefCounted
 ## Static game data: terrain, structures, units, enemy aircraft, technologies, difficulty.
 
-const VERSION := "1.0.0"
+const VERSION := "1.1.0"
 const MAP_W := 24
 const MAP_H := 16
 const WAVE_INTERVAL := 3
